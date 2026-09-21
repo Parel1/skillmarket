@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillMarket — Temukan Jasa Freelance Mahasiswa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>Skill<span>Market</span></span></a>
+    <nav class="nav-links">
+      <a class="active" href="index.html">Beranda</a>
+      <a href="jasa.html">Cari Jasa</a>
+      <a href="#kategori">Kategori</a>
+      <a href="#cara-kerja">Cara Kerja</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="login.html">Masuk</a>
+      <a class="btn btn-primary" href="register.html">Daftar</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="dot"></span> Marketplace jasa freelance mahasiswa</div>
+        <h1>Skill kamu punya nilai.<br><em>Mulai dari sini.</em></h1>
+        <p>Temukan mahasiswa berbakat untuk membantu pekerjaanmu, atau ubah keahlianmu menjadi peluang penghasilan.</p>
+        <div class="hero-search">
+          <span>⌕</span>
+          <input id="heroSearch" type="text" placeholder="Cari jasa, misalnya desain logo...">
+          <button onclick="searchFromHero()">Cari Jasa</button>
+        </div>
+        <div class="popular"><span>Populer:</span> <a href="jasa.html?q=Desain">Desain</a><a href="jasa.html?q=Video">Video Editing</a><a href="jasa.html?q=Website">Website</a><a href="jasa.html?q=Penulisan">Penulisan</a></div>
+      </div>
+      <div class="hero-art">
+        <div class="floating-card fc-top"><span class="avatar avatar-blue">AR</span><div><b>Logo Design</b><small>oleh Farrel · ★ 4.9</small></div><strong>Rp75k</strong></div>
+        <div class="hero-orb"><span class="orb-letter">S</span><span class="orb-label">SKILL<br>MARKET</span></div>
+        <div class="floating-card fc-bottom"><span class="mini-check">✓</span><div><b>Order selesai!</b><small>Website landing page</small></div><span class="status">Selesai</span></div>
+      </div>
+    </section>
+
+    <section class="section container" id="kategori">
+      <div class="section-head">
+        <div><span class="section-kicker">Jelajahi</span><h2>Temukan skill yang kamu butuhkan</h2></div>
+        <a class="text-link" href="jasa.html">Lihat semua →</a>
+      </div>
+      <div class="category-grid">
+        <a class="category-card" href="jasa.html?q=Desain"><span class="cat-icon">✦</span><b>Desain</b><small>124 jasa</small></a>
+        <a class="category-card" href="jasa.html?q=Programming"><span class="cat-icon">⌘</span><b>Programming</b><small>98 jasa</small></a>
+        <a class="category-card" href="jasa.html?q=Video"><span class="cat-icon">▶</span><b>Video & Motion</b><small>76 jasa</small></a>
+        <a class="category-card" href="jasa.html?q=Writing"><span class="cat-icon">Aa</span><b>Writing</b><small>65 jasa</small></a>
+        <a class="category-card" href="jasa.html?q=Marketing"><span class="cat-icon">↗</span><b>Marketing</b><small>52 jasa</small></a>
+        <a class="category-card" href="jasa.html?q=Education"><span class="cat-icon">◇</span><b>Education</b><small>41 jasa</small></a>
+      </div>
+    </section>
+
+    <section class="section soft-section">
+      <div class="container">
+        <div class="section-head">
+          <div><span class="section-kicker">Pilihan minggu ini</span><h2>Jasa yang sedang dicari</h2></div>
+          <a class="text-link" href="jasa.html">Eksplor jasa →</a>
+        </div>
+        <div class="service-grid">
+          <article class="service-card">
+            <div class="service-cover cover-purple"><span>BRAND<br>YOUR IDEA</span><i>✦</i></div>
+            <div class="service-body"><div class="service-cat">DESAIN GRAFIS</div><h3>Desain logo & brand identity untuk bisnis kamu</h3><div class="seller"><span class="avatar avatar-purple">FD</span><span><b>Fathian D.</b><small>★ 4.9 · 32 order</small></span></div><div class="service-foot"><span>Mulai dari <b>Rp100.000</b></span><a href="detail.html">Lihat →</a></div></div>
+          </article>
+          <article class="service-card">
+            <div class="service-cover cover-orange"><span>EDIT<br>BETTER</span><i>◒</i></div>
+            <div class="service-body"><div class="service-cat">VIDEO EDITING</div><h3>Edit video TikTok, Reels, atau konten kampus</h3><div class="seller"><span class="avatar avatar-orange">FA</span><span><b>Fawwaz A.</b><small>★ 5.0 · 18 order</small></span></div><div class="service-foot"><span>Mulai dari <b>Rp75.000</b></span><a href="detail.html">Lihat →</a></div></div>
+          </article>
+          <article class="service-card">
+            <div class="service-cover cover-green"><span>BUILD<br>ONLINE</span><i>⌘</i></div>
+            <div class="service-body"><div class="service-cat">PROGRAMMING</div><h3>Buat website landing page modern & responsif</h3><div class="seller"><span class="avatar avatar-green">FA</span><span><b>Farzana A.</b><small>★ 4.8 · 24 order</small></span></div><div class="service-foot"><span>Mulai dari <b>Rp250.000</b></span><a href="detail.html">Lihat →</a></div></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="how container" id="cara-kerja">
+      <div class="how-copy"><span class="section-kicker">Sederhana</span><h2>Satu tempat untuk skill & peluang.</h2><p>SkillMarket mempertemukan client dengan freelancer mahasiswa tanpa proses ribet. Cari, order, kerjakan, selesai.</p><a class="btn btn-dark" href="register.html">Mulai Sekarang →</a></div>
+      <div class="steps">
+        <div class="step"><span>01</span><div><b>Cari</b><p>Temukan jasa berdasarkan kebutuhan, kategori, dan budget.</p></div></div>
+        <div class="step"><span>02</span><div><b>Order & Chat</b><p>Diskusikan detail pekerjaan langsung dengan freelancer.</p></div></div>
+        <div class="step"><span>03</span><div><b>Selesai & Review</b><p>Terima hasil pekerjaan dan berikan rating untuk freelancer.</p></div></div>
+      </div>
+    </section>
+
+    <section class="cta container"><div><span class="section-kicker">Punya skill?</span><h2>Jadikan skill kamu sumber peluang.</h2><p>Mulai tawarkan jasa dan bangun portfolio dari sekarang.</p></div><a class="btn btn-primary" href="register.html">Daftar sebagai Freelancer →</a></section>
+  </main>
+
+  <footer class="footer"><div class="container footer-inner"><a class="brand" href="index.html"><span class="brand-mark">S</span><span>Skill<span>Market</span></span></a><span>© 2026 SkillMarket. Dibuat untuk project mahasiswa.</span><div><a href="#">Tentang</a><a href="#">Bantuan</a><a href="#">Ketentuan</a></div></div></footer>
+  <script src="js/main.js"></script>
+</body>
+</html>

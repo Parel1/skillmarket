@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cari Jasa — SkillMarket</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="navbar"><a class="brand" href="index.html"><span class="brand-mark">S</span><span>Skill<span>Market</span></span></a><nav class="nav-links"><a href="index.html">Beranda</a><a class="active" href="jasa.html">Cari Jasa</a><a href="index.html#kategori">Kategori</a><a href="index.html#cara-kerja">Cara Kerja</a></nav><div class="nav-actions"><a class="btn btn-ghost" href="login.html">Masuk</a><a class="btn btn-primary" href="register.html">Daftar</a></div></header>
+
+<main>
+<section class="browse-head"><div class="container"><span class="section-kicker">Marketplace</span><h1>Cari jasa yang kamu butuhkan.</h1><p>Berbagai skill mahasiswa, satu tempat.</p><div class="browse-search"><span>⌕</span><input id="searchInput" placeholder="Cari jasa..." oninput="filterServices()"></div></div></section>
+<section class="container browse-layout">
+<aside class="filters">
+  <div class="filter-title"><b>Filter</b><button onclick="resetFilters()">Reset</button></div>
+  <label>Kategori</label>
+  <label class="check"><input type="checkbox" value="Desain" onchange="filterServices()"> Desain</label>
+  <label class="check"><input type="checkbox" value="Programming" onchange="filterServices()"> Programming</label>
+  <label class="check"><input type="checkbox" value="Video" onchange="filterServices()"> Video & Motion</label>
+  <label class="check"><input type="checkbox" value="Writing" onchange="filterServices()"> Writing</label>
+  <label>Harga</label>
+  <div class="price-row"><input id="minPrice" type="number" placeholder="Min" oninput="filterServices()"><span>—</span><input id="maxPrice" type="number" placeholder="Max" oninput="filterServices()"></div>
+  <label>Rating minimum</label>
+  <select id="ratingFilter" onchange="filterServices()"><option value="0">Semua rating</option><option value="4.5">4.5+</option><option value="4.8">4.8+</option><option value="5">5.0</option></select>
+</aside>
+<div class="results"><div class="results-head"><b id="resultCount">6 jasa ditemukan</b><select id="sortSelect" onchange="sortServices()"><option value="relevant">Paling relevan</option><option value="price">Harga terendah</option><option value="rating">Rating tertinggi</option></select></div>
+<div id="serviceResults" class="service-grid service-grid-3"></div></div>
+</section>
+</main>
+<footer class="footer"><div class="container footer-inner"><a class="brand" href="index.html"><span class="brand-mark">S</span><span>Skill<span>Market</span></span></a><span>© 2026 SkillMarket</span><div><a href="#">Bantuan</a><a href="#">Ketentuan</a></div></div></footer>
+<script src="js/data.js"></script><script src="js/main.js"></script>
+</body></html>
