@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <link
+    rel="icon"
+    href="favicon.ico"
+>
+
+    <title>Profile — SkillMarket</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap"
+        rel="stylesheet"
+    >
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <!-- NAVBAR -->
+
+    <header class="navbar">
+
+        <a
+            class="brand"
+            href="index.html"
+        >
+            <span class="brand-mark">
+                S
+            </span>
+
+            <span>
+                Skill<span>Market</span>
+            </span>
+        </a>
+
+
+        <nav class="nav-links">
+
+            <a href="index.html">
+                Beranda
+            </a>
+
+            <a href="jasa.html">
+                Cari Jasa
+            </a>
+
+            <a href="index.html#kategori">
+                Kategori
+            </a>
+
+            <a href="index.html#cara-kerja">
+                Cara Kerja
+            </a>
+
+        </nav>
+
+
+        <div
+            class="nav-actions"
+            id="navActions"
+        >
+        </div>
+
+    </header>
+
+
+    <!-- PROFILE -->
+
+    <main class="container">
+
+        <section class="section">
+
+            <span class="section-kicker">
+                Akun Saya
+            </span>
+
+            <h1>
+                Profile
+            </h1>
+
+            <p class="muted">
+                Informasi akun SkillMarket kamu.
+            </p>
+
+
+            <div class="auth-card">
+
+                <div class="profile-avatar">
+                    <span id="profileInitial">
+                        ?
+                    </span>
+                </div>
+
+
+                <h2 id="profileName">
+                    Memuat...
+                </h2>
+
+
+                <p id="profileUsername">
+                    -
+                </p>
+
+
+                <div class="profile-info">
+
+                    <div>
+                        <small>
+                            Email
+                        </small>
+
+                        <p id="profileEmail">
+                            -
+                        </p>
+                    </div>
+
+
+                    <div>
+                        <small>
+                            Role
+                        </small>
+
+                        <p id="profileRole">
+                            -
+                        </p>
+                    </div>
+
+                </div>
+
+
+                <p
+                    id="profileMessage"
+                    class="muted"
+                ></p>
+
+
+                <button
+                    class="btn btn-primary"
+                    onclick="logout()"
+                >
+                    Keluar
+                </button>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- SCRIPT -->
+
+    <script src="js/main.js"></script>
+
+    <script>
+        loadProfile();
+    </script>
+
+</body>
+
+</html>

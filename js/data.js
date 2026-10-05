@@ -6,3 +6,20 @@ const services = [
   {id:5, category:"Desain", title:"Desain presentasi profesional dan menarik", seller:"Kevin F.", initials:"KF", rating:4.7, orders:27, price:60000, cover:"cover-orange", color:"orange"},
   {id:6, category:"Programming", title:"Buat website portfolio untuk mahasiswa", seller:"Farrel A.", initials:"FA", rating:4.8, orders:15, price:175000, cover:"cover-green", color:"green"}
 ];
+async function loadServices() {
+    try {
+        const response = await fetch(`${API_URL}/api/services`);
+
+        if (!response.ok) {
+            throw new Error("Gagal mengambil data jasa");
+        }
+
+        const services = await response.json();
+
+        console.log("Data dari backend:", services);
+
+        return services;
+    } catch (error) {
+        console.error("Error:", error);
+    }
+}

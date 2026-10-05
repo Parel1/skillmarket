@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <link
+        rel="icon"
+        href="favicon.ico"
+    >
+
+    <title>Pesanan Saya — SkillMarket</title>
+
+    <link
+        rel="preconnect"
+        href="https://fonts.googleapis.com"
+    >
+
+    <link
+        rel="preconnect"
+        href="https://fonts.googleapis.com"
+        crossorigin
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="css/style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+    <!-- =========================
+         NAVBAR
+    ========================== -->
+
+    <header class="navbar">
+
+        <a
+            class="brand"
+            href="index.html"
+        >
+            <span class="brand-mark">
+                S
+            </span>
+
+            <span>
+                Skill<span>Market</span>
+            </span>
+        </a>
+
+
+        <nav class="nav-links">
+
+            <a href="index.html">
+                Beranda
+            </a>
+
+            <a href="jasa.html">
+                Cari Jasa
+            </a>
+
+            <a href="index.html#kategori">
+                Kategori
+            </a>
+
+            <a href="index.html#cara-kerja">
+                Cara Kerja
+            </a>
+
+        </nav>
+
+
+        <div
+            class="nav-actions"
+            id="navActions"
+        >
+
+            <a
+                class="btn btn-ghost"
+                href="login.html"
+            >
+                Masuk
+            </a>
+
+            <a
+                class="btn btn-primary"
+                href="register.html"
+            >
+                Daftar
+            </a>
+
+        </div>
+
+    </header>
+
+
+
+    <!-- =========================
+         MAIN
+    ========================== -->
+
+    <main class="container orders-page">
+
+        <div class="page-head">
+
+            <span class="section-kicker">
+                Dashboard
+            </span>
+
+            <h1>
+                Pesanan Saya
+            </h1>
+
+            <p>
+                Pantau status pesanan jasa kamu.
+            </p>
+
+        </div>
+
+
+        <div
+            id="ordersContainer"
+            class="orders-list"
+        >
+
+            <div class="empty">
+                Memuat pesanan...
+            </div>
+
+        </div>
+
+    </main>
+
+
+
+    <!-- =========================
+         REVIEW MODAL
+    ========================== -->
+
+    <div
+        id="reviewModal"
+        class="review-modal"
+    >
+
+        <div class="review-box">
+
+            <button
+                type="button"
+                class="review-close"
+                onclick="closeReviewForm()"
+            >
+                ×
+            </button>
+
+
+            <span class="section-kicker">
+                REVIEW
+            </span>
+
+
+            <h2>
+                Beri Review
+            </h2>
+
+
+            <p
+                id="reviewServiceName"
+                class="review-service-name"
+            >
+                Jasa
+            </p>
+
+
+            <input
+                type="hidden"
+                id="reviewOrderId"
+            >
+
+
+            <!-- RATING -->
+
+            <div class="rating-input">
+
+                <button
+                    type="button"
+                    data-rating="1"
+                    onclick="setRating(1)"
+                >
+                    ★
+                </button>
+
+                <button
+                    type="button"
+                    data-rating="2"
+                    onclick="setRating(2)"
+                >
+                    ★
+                </button>
+
+                <button
+                    type="button"
+                    data-rating="3"
+                    onclick="setRating(3)"
+                >
+                    ★
+                </button>
+
+                <button
+                    type="button"
+                    data-rating="4"
+                    onclick="setRating(4)"
+                >
+                    ★
+                </button>
+
+                <button
+                    type="button"
+                    data-rating="5"
+                    onclick="setRating(5)"
+                >
+                    ★
+                </button>
+
+            </div>
+
+
+            <p
+                id="ratingText"
+                class="rating-text"
+            >
+                Pilih rating
+            </p>
+
+
+            <!-- KOMENTAR -->
+
+            <textarea
+                id="reviewComment"
+                placeholder="Tulis pengalaman kamu dengan jasa ini..."
+                rows="5"
+            ></textarea>
+
+
+            <!-- SUBMIT -->
+
+            <button
+                type="button"
+                class="btn btn-primary btn-full"
+                onclick="submitReview()"
+            >
+                Kirim Review
+            </button>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- =========================
+         TOAST
+    ========================== -->
+
+    <div
+        id="toast"
+        class="toast"
+    ></div>
+
+
+
+    <!-- =========================
+         FOOTER
+    ========================== -->
+
+    <footer class="footer">
+
+        <div class="container footer-inner">
+
+            <span>
+                © 2026 SkillMarket
+            </span>
+
+            <div>
+
+                <a href="#">
+                    Bantuan
+                </a>
+
+                <a href="#">
+                    Ketentuan
+                </a>
+
+            </div>
+
+        </div>
+
+    </footer>
+
+
+
+    <!-- =========================
+         JAVASCRIPT
+    ========================== -->
+
+    <script src="js/main.js"></script>
+
+<script>
+    loadMyOrders();
+</script>
+</body>
+
+</html>

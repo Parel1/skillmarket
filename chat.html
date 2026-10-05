@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - SkillMarket</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <header class="site-header">
+        <div class="container nav">
+            <a href="index.html" class="logo">
+                SkillMarket
+            </a>
+
+            <nav class="nav-actions">
+                <a href="index.html" class="btn btn-ghost">
+                    Beranda
+                </a>
+
+                <a href="pesanan.html" class="btn btn-ghost">
+                    Pesanan
+                </a>
+
+                <a href="chat.html" class="btn btn-primary">
+                    Chat
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container chat-page">
+
+        <div class="page-head">
+            <span class="section-kicker">
+                Komunikasi
+            </span>
+
+            <h1>Chat</h1>
+
+            <p>
+                Komunikasi dengan client atau freelancer.
+            </p>
+        </div>
+
+        <div class="chat-layout">
+
+            <aside class="conversation-panel">
+
+                <div class="conversation-head">
+                    <h2>Percakapan</h2>
+                </div>
+
+                <div id="conversationList">
+                    <div class="empty">
+                        Memuat conversation...
+                    </div>
+                </div>
+
+            </aside>
+
+            <section class="chat-panel">
+
+                <div id="chatHeader" class="chat-header">
+                    <strong>
+                        Pilih percakapan
+                    </strong>
+                </div>
+
+                <div id="messageList" class="message-list">
+
+                    <div class="empty">
+                        Pilih conversation untuk melihat pesan.
+                    </div>
+
+                </div>
+
+                <form id="messageForm" class="message-form">
+
+                    <input
+                        type="text"
+                        id="messageInput"
+                        placeholder="Tulis pesan..."
+                        autocomplete="off"
+                    >
+
+                    <button
+                        type="submit"
+                        class="btn btn-primary"
+                    >
+                        Kirim
+                    </button>
+
+                </form>
+
+            </section>
+
+        </div>
+
+    </main>
+
+    <script src="js/main.js"></script>
+
+</body>
+</html>

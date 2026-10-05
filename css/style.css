@@ -2247,3 +2247,686 @@ select {
         right: -25px;
     }
 }
+
+/* =========================
+   ORDERS PAGE
+========================= */
+
+.orders-page {
+    padding-top: 64px;
+    padding-bottom: 80px;
+}
+
+.page-head {
+    margin-bottom: 32px;
+}
+
+.page-head h1 {
+    margin: 8px 0;
+}
+
+.page-head p {
+    color: #777;
+}
+
+
+.orders-list {
+    display: grid;
+    gap: 16px;
+}
+
+
+.order-card {
+    padding: 24px;
+    border: 1px solid #e8e8e8;
+    border-radius: 16px;
+    background: #fff;
+}
+
+
+.order-card-main {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+
+.order-card h3 {
+    margin: 8px 0;
+}
+
+
+.order-card p {
+    margin: 0;
+    color: #777;
+}
+
+
+.order-card-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+
+.order-card-side strong {
+    font-size: 20px;
+}
+
+
+.order-status {
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+
+.status-pending {
+    background: #fff4d6;
+    color: #946200;
+}
+
+
+.status-processing {
+    background: #e7f0ff;
+    color: #2856a6;
+}
+
+
+.status-completed {
+    background: #e5f8ed;
+    color: #247448;
+}
+
+
+.status-cancelled {
+    background: #ffe7e7;
+    color: #a33a3a;
+}
+
+
+.order-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #eee;
+}
+
+
+.order-card-footer span {
+    color: #777;
+}
+
+
+@media (max-width: 700px) {
+
+    .order-card-main {
+        flex-direction: column;
+    }
+
+    .order-card-side {
+        align-items: flex-start;
+    }
+
+    .order-card-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+}
+
+/* =========================
+   ORDER ACTIONS
+========================= */
+
+.order-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+
+@media (max-width: 700px) {
+
+    .order-actions {
+        width: 100%;
+        flex-direction: column;
+    }
+
+    .order-actions .btn {
+        width: 100%;
+    }
+
+}
+
+/* ======================================================
+   REVIEW MODAL
+====================================================== */
+
+.review-modal {
+
+    position: fixed;
+
+    inset: 0;
+
+    background:
+        rgba(0, 0, 0, 0.45);
+
+    display: none;
+
+    align-items: center;
+
+    justify-content: center;
+
+    z-index: 9999;
+
+    padding: 20px;
+
+}
+
+
+.review-modal.active {
+
+    display: flex;
+
+}
+
+
+.review-box {
+
+    position: relative;
+
+    width: 100%;
+
+    max-width: 500px;
+
+    background: #fff;
+
+    border-radius: 20px;
+
+    padding: 32px;
+
+    box-shadow:
+        0 20px 60px
+        rgba(0, 0, 0, 0.2);
+
+    box-sizing: border-box;
+
+}
+
+
+.review-box h2 {
+
+    margin:
+        8px 0;
+
+}
+
+
+.review-service-name {
+
+    color: #777;
+
+    margin:
+        0 0 24px;
+
+}
+
+
+.review-close {
+
+    position: absolute;
+
+    top: 14px;
+
+    right: 18px;
+
+    width: 36px;
+
+    height: 36px;
+
+    border: none;
+
+    background: transparent;
+
+    font-size: 28px;
+
+    line-height: 1;
+
+    color: #777;
+
+    cursor: pointer;
+
+}
+
+
+.review-close:hover {
+
+    color: #111;
+
+}
+
+
+/* ======================================================
+   RATING
+====================================================== */
+
+.rating-input {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 4px;
+
+    margin-top: 8px;
+
+}
+
+
+.rating-input button {
+
+    border: none;
+
+    background: transparent;
+
+    padding: 2px;
+
+    font-size: 38px;
+
+    line-height: 1;
+
+    color: #d5d5d5;
+
+    cursor: pointer;
+
+    transition:
+        color 0.15s ease,
+        transform 0.15s ease;
+
+}
+
+
+.rating-input button:hover {
+
+    color: #f5b400;
+
+    transform:
+        scale(1.08);
+
+}
+
+
+.rating-input button.selected {
+
+    color: #f5b400;
+
+}
+
+
+.rating-text {
+
+    margin:
+        8px 0 20px;
+
+    font-size: 14px;
+
+    color: #777;
+
+}
+
+
+/* ======================================================
+   REVIEW TEXTAREA
+====================================================== */
+
+.review-box textarea {
+
+    display: block;
+
+    width: 100%;
+
+    min-height: 120px;
+
+    padding: 14px;
+
+    box-sizing: border-box;
+
+    resize: vertical;
+
+    border:
+        1px solid #ddd;
+
+    border-radius: 12px;
+
+    font-family: inherit;
+
+    font-size: 14px;
+
+    margin-bottom: 18px;
+
+}
+
+
+.review-box textarea:focus {
+
+    outline: none;
+
+    border-color: #888;
+
+}
+
+
+/* ======================================================
+   ORDER ACTIONS
+====================================================== */
+
+.order-actions {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: flex-end;
+
+    gap: 10px;
+
+    flex-wrap: wrap;
+
+}
+
+
+@media (max-width: 700px) {
+
+    .order-actions {
+
+        width: 100%;
+
+        justify-content: flex-start;
+
+    }
+
+
+    .order-actions .btn {
+
+        width: 100%;
+
+    }
+
+
+    .review-box {
+
+        padding: 26px 20px;
+
+    }
+
+
+    .rating-input button {
+
+        font-size: 34px;
+
+    }
+
+}
+
+.review-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+}
+
+.review-modal.active {
+    display: flex;
+}
+
+.review-box {
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+    background: #fff;
+    border-radius: 20px;
+    padding: 32px;
+    box-sizing: border-box;
+    box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.review-box h2 {
+    margin: 8px 0;
+}
+
+.review-service-name {
+    color: #777;
+    margin-bottom: 24px;
+}
+
+.review-close {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    font-size: 28px;
+    cursor: pointer;
+    color: #777;
+}
+
+.rating-input {
+    display: flex;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.rating-input button {
+    border: none;
+    background: transparent;
+    padding: 2px;
+    font-size: 38px;
+    color: #d5d5d5;
+    cursor: pointer;
+}
+
+.rating-input button:hover,
+.rating-input button.selected {
+    color: #f5b400;
+}
+
+.rating-text {
+    margin: 8px 0 20px;
+    color: #777;
+    font-size: 14px;
+}
+
+.review-box textarea {
+    display: block;
+    width: 100%;
+    min-height: 120px;
+    padding: 14px;
+    box-sizing: border-box;
+    resize: vertical;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    font-family: inherit;
+    margin-bottom: 18px;
+}
+
+.order-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.reviewed-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #fff4d6;
+    color: #946200;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+@media (max-width: 700px) {
+
+    .order-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .order-actions .btn {
+        width: 100%;
+    }
+
+    .review-box {
+        padding: 26px 20px;
+    }
+
+}
+
+.chat-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 20px;
+    min-height: 600px;
+}
+
+.conversation-panel,
+.chat-panel {
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.conversation-head,
+.chat-header {
+    padding: 18px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.conversation-head h2 {
+    margin: 0;
+    font-size: 18px;
+}
+
+#conversationList {
+    padding: 10px;
+}
+
+.conversation-item {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    background: transparent;
+    text-align: left;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.conversation-item:hover {
+    background: #f5f5f5;
+}
+
+.conversation-item.active {
+    background: #eeeeee;
+}
+
+.conversation-item strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.conversation-item span {
+    font-size: 13px;
+    color: #777;
+}
+
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-header {
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+}
+
+.message-list {
+    flex: 1;
+    padding: 20px;
+    min-height: 450px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.message {
+    display: flex;
+    margin-bottom: 12px;
+}
+
+.message.mine {
+    justify-content: flex-end;
+}
+
+.message-bubble {
+    max-width: 70%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: #f1f1f1;
+}
+
+.message.mine .message-bubble {
+    background: #111;
+    color: white;
+}
+
+.message-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: 0.6;
+}
+
+.message-form {
+    display: flex;
+    gap: 10px;
+    padding: 15px;
+    border-top: 1px solid #e5e5e5;
+}
+
+.message-form input {
+    flex: 1;
+    padding: 12px 14px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+}
+
+@media (max-width: 700px) {
+
+    .chat-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .conversation-panel {
+        max-height: 250px;
+    }
+
+    .message-list {
+        min-height: 350px;
+    }
+}

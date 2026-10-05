@@ -1,0 +1,133 @@
+// use prisma-8
+
+model User {
+  id        Int     @id @default(autoincrement())
+  email     String  @unique
+  username  String  @unique
+  name      String?
+  password  String
+  role      String  @default("client")
+
+  services Service[]
+  orders   Order[]
+  reviews  Review[]
+  favorites Favorite[]
+
+  clientConversations     Conversation[] @relation("ClientConversations")
+freelancerConversations Conversation[] @relation("FreelancerConversations")
+messages                Message[]
+
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
+
+model Service {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  category    String
+  price       Int
+  rating      Float   @default(0)
+
+  freelancer   User    @relation(fields: [freelancerId], references: [id])
+  freelancerId Int
+
+  orders  Order[]
+  reviews Review[]
+  favorites Favorite[]
+
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
+
+model Order {
+  id         Int    @id @default(autoincrement())
+  status     String @default("pending")
+  totalPrice Int
+
+  client   User @relation(fields: [clientId], references: [id])
+  clientId Int
+
+  service   Service @relation(fields: [serviceId], references: [id])
+  serviceId Int
+
+  review Review?
+  delivery Delivery?
+
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
+
+model Review {
+  id      Int     @id @default(autoincrement())
+  rating  Int
+  comment String?
+
+  client   User @relation(fields: [clientId], references: [id])
+  clientId Int
+
+  service   Service @relation(fields: [serviceId], references: [id])
+  serviceId Int
+
+  order   Order @relation(fields: [orderId], references: [id])
+  orderId Int @unique
+
+  createdAt TimestamptzString @default(now())
+}
+
+model Favorite {
+  id        Int @id @default(autoincrement())
+
+  client   User @relation(fields: [clientId], references: [id])
+  clientId Int
+
+  service   Service @relation(fields: [serviceId], references: [id])
+  serviceId Int
+
+  createdAt TimestamptzString @default(now())
+
+  @@unique([clientId, serviceId])
+}
+
+model Conversation {
+  id           Int @id @default(autoincrement())
+
+  client       User @relation("ClientConversations", fields: [clientId], references: [id])
+  clientId     Int
+
+  freelancer   User @relation("FreelancerConversations", fields: [freelancerId], references: [id])
+  freelancerId Int
+
+  messages Message[]
+
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
+
+model Message {
+  id             Int @id @default(autoincrement())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId Int
+
+  sender         User @relation(fields: [senderId], references: [id])
+  senderId       Int
+
+  content        String
+
+  createdAt TimestamptzString @default(now())
+}
+
+model Delivery {
+  id        Int     @id @default(autoincrement())
+
+  order     Order   @relation(fields: [orderId], references: [id])
+  orderId   Int     @unique
+
+  fileUrl   String
+  fileName  String
+
+  note      String?
+
+  createdAt TimestamptzString @default(now())
+}

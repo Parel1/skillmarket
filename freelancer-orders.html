@@ -15,7 +15,7 @@
         href="favicon.ico"
     >
 
-    <title>Detail Jasa — SkillMarket</title>
+    <title>Order Masuk — SkillMarket</title>
 
     <link
         rel="preconnect"
@@ -44,9 +44,7 @@
 <body>
 
 
-    <!-- =========================
-         NAVBAR
-    ========================== -->
+    <!-- NAVBAR -->
 
     <header class="navbar">
 
@@ -70,10 +68,7 @@
                 Beranda
             </a>
 
-            <a
-                class="active"
-                href="jasa.html"
-            >
+            <a href="jasa.html">
                 Cari Jasa
             </a>
 
@@ -113,39 +108,34 @@
 
 
 
-    <!-- =========================
-         MAIN
-    ========================== -->
+    <!-- MAIN -->
 
-    <main class="container detail-page">
+    <main class="container orders-page">
 
-        <div class="breadcrumb">
+        <div class="page-head">
 
-            <a href="jasa.html">
-                Cari Jasa
-            </a>
-
-            <span>›</span>
-
-            <span id="breadcrumbCategory">
-                Detail
+            <span class="section-kicker">
+                Dashboard Freelancer
             </span>
 
-            <span>›</span>
+            <h1>
+                Order Masuk
+            </h1>
 
-            <span>
-                Detail
-            </span>
+            <p>
+                Kelola pesanan dari client.
+            </p>
 
         </div>
 
 
-        <!-- Detail akan diisi oleh JavaScript -->
-
-        <div id="detailContainer">
+        <div
+            id="freelancerOrdersContainer"
+            class="orders-list"
+        >
 
             <div class="empty">
-                Memuat detail jasa...
+                Memuat order...
             </div>
 
         </div>
@@ -154,9 +144,7 @@
 
 
 
-    <!-- =========================
-         TOAST
-    ========================== -->
+    <!-- TOAST -->
 
     <div
         id="toast"
@@ -165,9 +153,7 @@
 
 
 
-    <!-- =========================
-         FOOTER
-    ========================== -->
+    <!-- FOOTER -->
 
     <footer class="footer">
 
@@ -195,14 +181,10 @@
 
 
 
-    <!-- =========================
-         JAVASCRIPT
-    ========================== -->
-
     <script src="js/main.js"></script>
 
     <script>
-        loadServiceDetail();
+        loadFreelancerOrders();
     </script>
 
 </body>
