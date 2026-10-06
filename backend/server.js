@@ -4,7 +4,7 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-import { db } from "./src/prisma/db.ts";
+import { db } from "./src/prisma/db.js";
 
 const app = express();
 
