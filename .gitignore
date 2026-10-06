@@ -14,6 +14,3 @@ backend/.cursor/
 backend/.devin/
 
 backend/migrations/
-
-backend/src/prisma/contract.json
-backend/src/prisma/contract.d.ts
