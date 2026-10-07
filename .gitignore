@@ -14,3 +14,7 @@ backend/.cursor/
 backend/.devin/
 
 backend/migrations/
+node_modules/
+.env
+create-admin.js
+skillmarket-data.sql

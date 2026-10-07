@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum UserRole {
+  CLIENT
+  FREELANCER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  password     String
+  role         UserRole @default(CLIENT)
+  profileImage String?
+  bio          String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  services     Service[]
+  portfolios   Portfolio[]
+  orders       Order[]      @relation("ClientOrders")
+  reviews      Review[]
+  favorites    Favorite[]
+  conversations ConversationParticipant[]
+  messages     Message[]
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  services Service[]
+}
+
+model Service {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String   @db.Text
+  price       Int
+  image       String?
+  rating      Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  freelancerId Int
+  categoryId   Int
+
+  freelancer User      @relation(fields: [freelancerId], references: [id])
+  category   Category  @relation(fields: [categoryId], references: [id])
+  orders     Order[]
+  reviews    Review[]
+  favorites  Favorite[]
+}
+
+model Portfolio {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?  @db.Text
+  image       String?
+  link        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  freelancerId Int
+  freelancer   User @relation(fields: [freelancerId], references: [id])
+}
+
+model Order {
+  id          Int         @id @default(autoincrement())
+  status      OrderStatus @default(PENDING)
+  totalPrice  Int
+  description String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  clientId     Int
+  serviceId    Int
+
+  client       User      @relation("ClientOrders", fields: [clientId], references: [id])
+  service      Service   @relation(fields: [serviceId], references: [id])
+  review       Review?
+  delivery Delivery?
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  userId    Int
+  serviceId Int
+  orderId   Int      @unique
+
+  user    User    @relation(fields: [userId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+  order   Order   @relation(fields: [orderId], references: [id])
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  userId    Int
+  serviceId Int
+
+  user    User    @relation(fields: [userId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@unique([userId, serviceId])
+}
+
+model Conversation {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+}
+
+model ConversationParticipant {
+  id             Int @id @default(autoincrement())
+  userId         Int
+  conversationId Int
+
+  user         User         @relation(fields: [userId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@unique([userId, conversationId])
+}
+
+model Message {
+  id             Int      @id @default(autoincrement())
+  content        String   @db.Text
+  createdAt      DateTime @default(now())
+
+  senderId       Int
+  conversationId Int
+
+  sender       User         @relation(fields: [senderId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+}
+model Delivery {
+  id        Int      @id @default(autoincrement())
+  fileUrl   String
+  fileName  String
+  note      String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderId Int  @unique
+  order   Order @relation(fields: [orderId], references: [id])
+}

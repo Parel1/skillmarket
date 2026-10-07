@@ -3,7 +3,7 @@ import cors from "cors";
 import "dotenv/config"; 
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-
+import rateLimit from "express-rate-limit";
 import { db } from "./src/prisma/db.js";
 
 const app = express();
@@ -11,8 +11,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-await db.connect();
-
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: {
+        message: "Terlalu banyak percobaan login. Coba lagi nanti."
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // =========================
 // HOME
@@ -41,7 +48,19 @@ app.get("/api/services", async (req, res) => {
             limit = 10
         } = req.query;
 
-        let services = await db.orm.public.Service.all();
+        // Ambil services dari Prisma
+        let services = await db.service.findMany({
+            include: {
+                category: true,
+                freelancer: {
+                    select: {
+                        id: true,
+                        name: true,
+                        profileImage: true
+                    }
+                }
+            }
+        });
 
         // Search berdasarkan judul, deskripsi, atau kategori
         if (search) {
@@ -51,14 +70,14 @@ app.get("/api/services", async (req, res) => {
                 service.title.toLowerCase().includes(keyword) ||
                 (service.description &&
                     service.description.toLowerCase().includes(keyword)) ||
-                service.category.toLowerCase().includes(keyword)
+                service.category.name.toLowerCase().includes(keyword)
             );
         }
 
         // Filter kategori
         if (category) {
             services = services.filter(service =>
-                service.category.toLowerCase() === category.toLowerCase()
+                service.category.name.toLowerCase() === category.toLowerCase()
             );
         }
 
@@ -90,8 +109,8 @@ app.get("/api/services", async (req, res) => {
         }
 
         // Pagination
-        const currentPage = Math.max(parseInt(page), 1);
-        const itemsPerPage = Math.max(parseInt(limit), 1);
+        const currentPage = Math.max(parseInt(page) || 1, 1);
+        const itemsPerPage = Math.max(parseInt(limit) || 10, 1);
 
         const total = services.length;
         const totalPages = Math.ceil(total / itemsPerPage);
@@ -114,7 +133,7 @@ app.get("/api/services", async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("GET /api/services error:", error);
 
         res.status(500).json({
             message: "Gagal mengambil services",
@@ -123,37 +142,6 @@ app.get("/api/services", async (req, res) => {
     }
 });
 
-
-// =========================
-// GET SERVICE BY ID
-// =========================
-
-app.get("/api/services/:id", async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-
-        const service = await db.orm.public.Service
-            .where({ id })
-            .first();
-
-        if (!service) {
-            return res.status(404).json({
-                message: "Jasa tidak ditemukan"
-            });
-        }
-
-        res.json(service);
-
-    } catch (error) {
-        console.error(error);
-
-        res.status(500).json({
-            message: "Gagal mengambil data jasa"
-        });
-    }
-});
-
-
 // =========================
 // CREATE SERVICE
 // =========================
@@ -161,140 +149,234 @@ app.get("/api/services/:id", async (req, res) => {
 app.post(
     "/api/services",
     authenticateToken,
-    authorizeRole("freelancer"), async (req, res) => {
-    try {
-        const {
-            title,
-            description,
-            category,
-            price,
-        } = req.body;
+    authorizeRole("freelancer"),
+    async (req, res) => {
+        try {
+            const {
+                title,
+                description,
+                categoryId,
+                price
+            } = req.body;
 
-        const service = await db.orm.public.Service.create({
-            title,
-            description,
-            category,
-            price,
-            rating: 0,
-            freelancerId
-        });
+            // Validasi input
+            if (!title || !description || !categoryId || price === undefined) {
+                return res.status(400).json({
+                    message: "Title, description, categoryId, dan price wajib diisi"
+                });
+            }
 
-        res.status(201).json({
-            message: "Jasa berhasil ditambahkan",
-            service
-        });
+            const freelancerId = req.user.userId;
 
-    } catch (error) {
-        console.error(error);
+            // Pastikan category ada
+            const category = await db.category.findUnique({
+                where: {
+                    id: parseInt(categoryId)
+                }
+            });
 
-        res.status(500).json({
-            message: "Gagal menambahkan jasa"
-        });
+            if (!category) {
+                return res.status(404).json({
+                    message: "Kategori tidak ditemukan"
+                });
+            }
+
+            // Buat service
+            const service = await db.service.create({
+                data: {
+                    title,
+                    description,
+                    price: parseInt(price),
+                    rating: 0,
+                    freelancerId,
+                    categoryId: parseInt(categoryId)
+                },
+                include: {
+                    category: true,
+                    freelancer: {
+                        select: {
+                            id: true,
+                            name: true,
+                            profileImage: true
+                        }
+                    }
+                }
+            });
+
+            res.status(201).json({
+                message: "Jasa berhasil ditambahkan",
+                service
+            });
+
+        } catch (error) {
+            console.error("CREATE SERVICE ERROR:", error);
+
+            res.status(500).json({
+                message: "Gagal menambahkan jasa",
+                error: error.message
+            });
+        }
     }
-});
+);
 
-
-// =========================
-// UPDATE SERVICE
-// =========================
 
 app.put(
     "/api/services/:id",
     authenticateToken,
-    authorizeRole("freelancer"), async (req, res) => {
-    try {
-        console.log("PUT BODY:", req.body);
-        console.log("PUT ID:", req.params.id);
+    authorizeRole("freelancer"),
+    async (req, res) => {
+        try {
+            const id = parseInt(req.params.id, 10);
 
-        const id = parseInt(req.params.id);
+            if (isNaN(id)) {
+                return res.status(400).json({
+                    message: "ID jasa tidak valid"
+                });
+            }
 
-        if (!req.body) {
-            return res.status(400).json({
-                message: "Request body kosong"
-            });
-        }
-
-        const {
-            title,
-            description,
-            category,
-            price,
-            rating
-        } = req.body;
-
-        const existingService = await db.orm.public.Service
-            .where({ id })
-            .first();
-
-        if (!existingService) {
-            return res.status(404).json({
-                message: "Jasa tidak ditemukan"
-            });
-        }
-
-        const updatedService = await db.orm.public.Service
-            .where({ id })
-            .update({
+            const {
                 title,
                 description,
-                category,
-                price,
-                rating
+                categoryId,
+                price
+            } = req.body;
+
+            if (!title || !description || !categoryId || price === undefined) {
+                return res.status(400).json({
+                    message: "Title, description, categoryId, dan price wajib diisi"
+                });
+            }
+
+            const existingService = await db.service.findUnique({
+                where: {
+                    id
+                }
             });
 
-        res.json({
-            message: "Jasa berhasil diperbarui",
-            service: updatedService
-        });
+            if (!existingService) {
+                return res.status(404).json({
+                    message: "Jasa tidak ditemukan"
+                });
+            }
 
-    } catch (error) {
-        console.error("ERROR PUT:", error);
+            // Pastikan hanya freelancer pemilik jasa yang bisa mengedit
+            if (existingService.freelancerId !== req.user.userId) {
+                return res.status(403).json({
+                    message: "Anda tidak memiliki akses untuk mengedit jasa ini"
+                });
+            }
 
-        res.status(500).json({
-            message: "Gagal memperbarui jasa",
-            error: error.message
-        });
+            const category = await db.category.findUnique({
+                where: {
+                    id: parseInt(categoryId, 10)
+                }
+            });
+
+            if (!category) {
+                return res.status(404).json({
+                    message: "Kategori tidak ditemukan"
+                });
+            }
+
+            const updatedService = await db.service.update({
+                where: {
+                    id
+                },
+                data: {
+                    title,
+                    description,
+                    categoryId: parseInt(categoryId, 10),
+                    price: parseInt(price, 10)
+                },
+                include: {
+                    category: true,
+                    freelancer: {
+                        select: {
+                            id: true,
+                            name: true,
+                            profileImage: true,
+                            bio: true
+                        }
+                    }
+                }
+            });
+
+            res.json({
+                message: "Jasa berhasil diperbarui",
+                service: updatedService
+            });
+
+        } catch (error) {
+            console.error("UPDATE SERVICE ERROR:", error);
+
+            res.status(500).json({
+                message: "Gagal memperbarui jasa",
+                error: error.message
+            });
+        }
     }
-});
-
+);
 
 // =========================
 // DELETE SERVICE
 // =========================
 
-app.delete("/api/services/:id", authenticateToken, authorizeRole("freelancer"), async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
+app.delete(
+    "/api/services/:id",
+    authenticateToken,
+    authorizeRole("freelancer"),
+    async (req, res) => {
+        try {
+            const id = parseInt(req.params.id, 10);
 
-        const existingService = await db.orm.public.Service
-            .where({ id })
-            .first();
+            if (isNaN(id)) {
+                return res.status(400).json({
+                    message: "ID jasa tidak valid"
+                });
+            }
 
-        if (!existingService) {
-            return res.status(404).json({
-                message: "Jasa tidak ditemukan"
+            const existingService = await db.service.findUnique({
+                where: {
+                    id
+                }
+            });
+
+            if (!existingService) {
+                return res.status(404).json({
+                    message: "Jasa tidak ditemukan"
+                });
+            }
+
+            // Pastikan freelancer hanya bisa menghapus jasa miliknya
+            if (existingService.freelancerId !== req.user.userId) {
+                return res.status(403).json({
+                    message: "Anda tidak memiliki akses untuk menghapus jasa ini"
+                });
+            }
+
+            const deletedService = await db.service.delete({
+                where: {
+                    id
+                }
+            });
+
+            res.json({
+                message: "Jasa berhasil dihapus",
+                service: deletedService
+            });
+
+        } catch (error) {
+            console.error("DELETE SERVICE ERROR:", error);
+
+            res.status(500).json({
+                message: "Gagal menghapus jasa",
+                error: error.message
             });
         }
-
-        const deletedService = await db.orm.public.Service
-    .where({ id })
-    .delete();
-
-        res.json({
-            message: "Jasa berhasil dihapus",
-            service: deletedService
-        });
-
-    } catch (error) {
-        console.error(error);
-
-        res.status(500).json({
-            message: "Gagal menghapus jasa"
-        });
     }
-});
+);
 
-// =========================
+/// =========================
 // FAVORITES
 // =========================
 
@@ -305,19 +387,38 @@ app.get(
     authorizeRole("client"),
     async (req, res) => {
         try {
-            const favorites = await db.orm.public.Favorite
-                .where({
-                    clientId: req.user.userId
-                })
-                .all();
+            const favorites = await db.favorite.findMany({
+                where: {
+                    userId: req.user.userId
+                },
+                include: {
+                    service: {
+                        include: {
+                            category: true,
+                            freelancer: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    profileImage: true,
+                                    bio: true
+                                }
+                            }
+                        }
+                    }
+                },
+                orderBy: {
+                    createdAt: "desc"
+                }
+            });
 
             res.json(favorites);
 
         } catch (error) {
-            console.error(error);
+            console.error("GET FAVORITES ERROR:", error);
 
             res.status(500).json({
-                message: "Gagal mengambil favorite"
+                message: "Gagal mengambil favorite",
+                error: error.message
             });
         }
     }
@@ -333,19 +434,36 @@ app.post(
         try {
             const { serviceId } = req.body;
 
-            if (!serviceId) {
+            const parsedServiceId = parseInt(serviceId, 10);
+
+            if (isNaN(parsedServiceId)) {
                 return res.status(400).json({
-                    message: "Service ID wajib diisi"
+                    message: "Service ID wajib diisi dan harus berupa angka"
                 });
             }
 
-            const existingFavorite =
-                await db.orm.public.Favorite
-                    .where({
-                        clientId: req.user.userId,
-                        serviceId: parseInt(serviceId)
-                    })
-                    .first();
+            // Cek apakah service ada
+            const service = await db.service.findUnique({
+                where: {
+                    id: parsedServiceId
+                }
+            });
+
+            if (!service) {
+                return res.status(404).json({
+                    message: "Jasa tidak ditemukan"
+                });
+            }
+
+            // Cek apakah sudah ada di favorite
+            const existingFavorite = await db.favorite.findUnique({
+                where: {
+                    userId_serviceId: {
+                        userId: req.user.userId,
+                        serviceId: parsedServiceId
+                    }
+                }
+            });
 
             if (existingFavorite) {
                 return res.status(409).json({
@@ -353,11 +471,27 @@ app.post(
                 });
             }
 
-            const favorite =
-                await db.orm.public.Favorite.create({
-                    clientId: req.user.userId,
-                    serviceId: parseInt(serviceId)
-                });
+            const favorite = await db.favorite.create({
+                data: {
+                    userId: req.user.userId,
+                    serviceId: parsedServiceId
+                },
+                include: {
+                    service: {
+                        include: {
+                            category: true,
+                            freelancer: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    profileImage: true,
+                                    bio: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
 
             res.status(201).json({
                 message: "Jasa berhasil ditambahkan ke favorite",
@@ -365,7 +499,7 @@ app.post(
             });
 
         } catch (error) {
-            console.error(error);
+            console.error("CREATE FAVORITE ERROR:", error);
 
             res.status(500).json({
                 message: "Gagal menambahkan favorite",
@@ -383,15 +517,22 @@ app.delete(
     authorizeRole("client"),
     async (req, res) => {
         try {
-            const serviceId = parseInt(req.params.serviceId);
+            const serviceId = parseInt(req.params.serviceId, 10);
 
-            const favorite =
-                await db.orm.public.Favorite
-                    .where({
-                        clientId: req.user.userId,
+            if (isNaN(serviceId)) {
+                return res.status(400).json({
+                    message: "Service ID tidak valid"
+                });
+            }
+
+            const favorite = await db.favorite.findUnique({
+                where: {
+                    userId_serviceId: {
+                        userId: req.user.userId,
                         serviceId
-                    })
-                    .first();
+                    }
+                }
+            });
 
             if (!favorite) {
                 return res.status(404).json({
@@ -399,18 +540,18 @@ app.delete(
                 });
             }
 
-            await db.orm.public.Favorite
-                .where({
+            await db.favorite.delete({
+                where: {
                     id: favorite.id
-                })
-                .delete();
+                }
+            });
 
             res.json({
                 message: "Jasa berhasil dihapus dari favorite"
             });
 
         } catch (error) {
-            console.error(error);
+            console.error("DELETE FAVORITE ERROR:", error);
 
             res.status(500).json({
                 message: "Gagal menghapus favorite",
@@ -420,235 +561,188 @@ app.delete(
     }
 );
 
+// =========================
+// ORDERS
+// =========================
+
+// GET ALL ORDERS
 app.get(
     "/api/orders",
     authenticateToken,
     async (req, res) => {
         try {
             const userId = req.user.userId;
-            const role = req.user.role;
+            const role = req.user.role?.toUpperCase();
 
-            let orders = [];
+            let where = {};
 
-            // =========================
-            // CLIENT
-            // =========================
-            if (role === "client") {
-
-                orders = await db.orm.public.Order
-                    .where({
-                        clientId: userId
-                    })
-                    .all();
-
-            }
-
-            // =========================
-            // FREELANCER
-            // =========================
-            else if (role === "freelancer") {
-
-                const services =
-                    await db.orm.public.Service
-                        .where({
-                            freelancerId: userId
-                        })
-                        .all();
-
-                const serviceIds =
-                    services.map(service => service.id);
-
-                if (serviceIds.length > 0) {
-
-                    for (const serviceId of serviceIds) {
-
-                        const serviceOrders =
-                            await db.orm.public.Order
-                                .where({
-                                    serviceId
-                                })
-                                .all();
-
-                        orders.push(
-                            ...serviceOrders
-                        );
+            if (role === "CLIENT") {
+                where = {
+                    clientId: userId
+                };
+            } else if (role === "FREELANCER") {
+                where = {
+                    service: {
+                        freelancerId: userId
                     }
-                }
-            }
-
-            else {
+                };
+            } else {
                 return res.status(403).json({
                     message: "Anda tidak memiliki akses"
                 });
             }
 
-            // =========================
-            // TAMBAHKAN DETAIL
-            // =========================
-
-            const ordersWithDetails = [];
-
-            for (const order of orders) {
-
-                const service =
-                    await db.orm.public.Service
-                        .where({
-                            id: order.serviceId
-                        })
-                        .first();
-
-                let freelancer = null;
-
-                if (service) {
-
-                    freelancer =
-                        await db.orm.public.User
-                            .where({
-                                id: service.freelancerId
-                            })
-                            .first();
+            const orders = await db.order.findMany({
+                where,
+                include: {
+                    service: {
+                        include: {
+                            category: true,
+                            freelancer: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    profileImage: true,
+                                    bio: true
+                                }
+                            }
+                        }
+                    },
+                    review: {
+                        select: {
+                            id: true,
+                            rating: true,
+                            comment: true,
+                            createdAt: true
+                        }
+                    }
+                },
+                orderBy: {
+                    createdAt: "desc"
                 }
+            });
 
-                let review = null;
-
-                try {
-
-                    review =
-                        await db.orm.public.Review
-                            .where({
-                                orderId: order.id
-                            })
-                            .first();
-
-                } catch (reviewError) {
-
-                    console.log(
-                        "Review belum tersedia:",
-                        reviewError.message
-                    );
-                }
-
-                ordersWithDetails.push({
-
-                    ...order,
-
-                    service: service
-                        ? {
-                            id: service.id,
-                            title: service.title,
-                            description:
-                                service.description,
-                            category:
-                                service.category,
-                            price:
-                                service.price,
-                            rating:
-                                service.rating
-                        }
-                        : null,
-
-                    freelancer: freelancer
-                        ? {
-                            id: freelancer.id,
-                            username:
-                                freelancer.username,
-                            name:
-                                freelancer.name
-                        }
-                        : null,
-
-                    review: review
-                        ? {
-                            id: review.id,
-                            rating:
-                                review.rating,
-                            comment:
-                                review.comment,
-                            createdAt:
-                                review.createdAt
-                        }
-                        : null
-                });
-            }
-
-            res.json(ordersWithDetails);
+            res.json(orders);
 
         } catch (error) {
-
-            console.error(
-                "GET ORDERS ERROR:",
-                error
-            );
+            console.error("GET ORDERS ERROR:", error);
 
             res.status(500).json({
-                message:
-                    "Gagal mengambil order"
+                message: "Gagal mengambil order",
+                error: error.message
             });
         }
     }
 );
 
+
+// GET ORDERS MILIK FREELANCER
 app.get(
     "/api/freelancer/orders",
     authenticateToken,
     authorizeRole("freelancer"),
     async (req, res) => {
         try {
-            const services = await db.orm.public.Service
-                .where({
-                    freelancerId: req.user.userId
-                })
-                .all();
-
-            const orders = [];
-
-            for (const service of services) {
-                const serviceOrders = await db.orm.public.Order
-                    .where({
-                        serviceId: service.id
-                    })
-                    .all();
-
-                orders.push(...serviceOrders);
-            }
+            const orders = await db.order.findMany({
+                where: {
+                    service: {
+                        freelancerId: req.user.userId
+                    }
+                },
+                include: {
+                    service: {
+                        include: {
+                            category: true
+                        }
+                    },
+                    client: {
+                        select: {
+                            id: true,
+                            name: true,
+                            profileImage: true,
+                            bio: true
+                        }
+                    },
+                    review: {
+                        select: {
+                            id: true,
+                            rating: true,
+                            comment: true,
+                            createdAt: true
+                        }
+                    }
+                },
+                orderBy: {
+                    createdAt: "desc"
+                }
+            });
 
             res.json(orders);
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "GET FREELANCER ORDERS ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal mengambil order freelancer"
+                message: "Gagal mengambil order freelancer",
+                error: error.message
             });
         }
     }
 );
 
+
+// UPDATE STATUS ORDER
 app.put(
     "/api/freelancer/orders/:id/status",
     authenticateToken,
     authorizeRole("freelancer"),
     async (req, res) => {
         try {
-            const orderId = parseInt(req.params.id);
+            const orderId = parseInt(
+                req.params.id,
+                10
+            );
+
             const { status } = req.body;
 
+            if (isNaN(orderId)) {
+                return res.status(400).json({
+                    message: "ID order tidak valid"
+                });
+            }
+
             const allowedStatus = [
-                "pending",
-                "processing",
-                "completed",
-                "cancelled"
+                "PENDING",
+                "IN_PROGRESS",
+                "COMPLETED",
+                "CANCELLED"
             ];
 
-            if (!allowedStatus.includes(status)) {
+            const normalizedStatus =
+                status?.toUpperCase();
+
+            if (
+                !allowedStatus.includes(
+                    normalizedStatus
+                )
+            ) {
                 return res.status(400).json({
                     message: "Status order tidak valid"
                 });
             }
 
-            const order = await db.orm.public.Order
-                .where({ id: orderId })
-                .first();
+            const order =
+                await db.order.findUnique({
+                    where: {
+                        id: orderId
+                    },
+                    include: {
+                        service: true
+                    }
+                });
 
             if (!order) {
                 return res.status(404).json({
@@ -656,95 +750,134 @@ app.put(
                 });
             }
 
-            const service = await db.orm.public.Service
-                .where({
-                    id: order.serviceId,
-                    freelancerId: req.user.userId
-                })
-                .first();
-
-            if (!service) {
+            if (
+                order.service.freelancerId !==
+                req.user.userId
+            ) {
                 return res.status(403).json({
-                    message: "Anda tidak memiliki akses ke order ini"
+                    message:
+                        "Anda tidak memiliki akses ke order ini"
                 });
             }
 
-            const updatedOrder = await db.orm.public.Order
-                .where({ id: orderId })
-                .update({
-                    status
+            const updatedOrder =
+                await db.order.update({
+                    where: {
+                        id: orderId
+                    },
+                    data: {
+                        status: normalizedStatus
+                    },
+                    include: {
+                        service: true
+                    }
                 });
 
             res.json({
-                message: "Status order berhasil diubah",
+                message:
+                    "Status order berhasil diubah",
                 order: updatedOrder
             });
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "UPDATE ORDER STATUS ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal mengubah status order",
+                message:
+                    "Gagal mengubah status order",
                 error: error.message
             });
         }
     }
 );
 
-// ======================================================
-// CREATE ORDER
-// ======================================================
 
+// CREATE ORDER
 app.post(
     "/api/orders",
     authenticateToken,
     authorizeRole("client"),
     async (req, res) => {
         try {
-            const { serviceId } = req.body;
+            const serviceId =
+                parseInt(
+                    req.body.serviceId,
+                    10
+                );
 
-            if (!serviceId) {
+            if (isNaN(serviceId)) {
                 return res.status(400).json({
-                    message: "Service ID wajib diisi"
+                    message:
+                        "Service ID wajib diisi"
                 });
             }
 
             const service =
-                await db.orm.public.Service
-                    .where({
-                        id: parseInt(serviceId)
-                    })
-                    .first();
+                await db.service.findUnique({
+                    where: {
+                        id: serviceId
+                    }
+                });
 
             if (!service) {
                 return res.status(404).json({
-                    message: "Jasa tidak ditemukan"
+                    message:
+                        "Jasa tidak ditemukan"
                 });
             }
 
             const order =
-                await db.orm.public.Order.create({
-                    clientId: req.user.userId,
-                    serviceId: service.id,
-                    totalPrice: service.price,
-                    status: "pending"
+                await db.order.create({
+                    data: {
+                        clientId:
+                            req.user.userId,
+                        serviceId:
+                            service.id,
+                        totalPrice:
+                            service.price,
+                        status: "PENDING"
+                    },
+                    include: {
+                        service: {
+                            include: {
+                                category: true,
+                                freelancer: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        profileImage: true,
+                                        bio: true
+                                    }
+                                }
+                            }
+                        }
+                    }
                 });
 
             res.status(201).json({
-                message: "Order berhasil dibuat",
+                message:
+                    "Order berhasil dibuat",
                 order
             });
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "CREATE ORDER ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal membuat order",
+                message:
+                    "Gagal membuat order",
                 error: error.message
             });
         }
     }
 );
+
 
 // =========================
 // DELIVERY / SERAH TERIMA
@@ -756,8 +889,14 @@ app.post(
     authorizeRole("freelancer"),
     async (req, res) => {
         try {
-            const orderId = parseInt(req.params.orderId);
+            const orderId = parseInt(req.params.orderId, 10);
             const { fileUrl, fileName, note } = req.body;
+
+            if (isNaN(orderId)) {
+                return res.status(400).json({
+                    message: "ID order tidak valid"
+                });
+            }
 
             if (!fileUrl || !fileName) {
                 return res.status(400).json({
@@ -765,11 +904,15 @@ app.post(
                 });
             }
 
-            const order = await db.orm.public.Order
-                .where({
+            const order = await db.order.findUnique({
+                where: {
                     id: orderId
-                })
-                .first();
+                },
+                include: {
+                    service: true,
+                    delivery: true
+                }
+            });
 
             if (!order) {
                 return res.status(404).json({
@@ -777,71 +920,60 @@ app.post(
                 });
             }
 
-            const service = await db.orm.public.Service
-                .where({
-                    id: order.serviceId
-                })
-                .first();
-
-            if (!service) {
-                return res.status(404).json({
-                    message: "Service tidak ditemukan"
-                });
-            }
-
             if (
-                service.freelancerId !==
+                order.service.freelancerId !==
                 req.user.userId
             ) {
                 return res.status(403).json({
-                    message: "Anda bukan freelancer dari order ini"
+                    message:
+                        "Anda bukan freelancer dari order ini"
                 });
             }
 
-            if (order.status !== "pending") {
-    return res.status(400).json({
-        message: "Order tidak dapat dikirim pada status ini"
-    });
-}
+            if (order.status !== "IN_PROGRESS") {
+                return res.status(400).json({
+                    message:
+                        "Order harus berstatus IN_PROGRESS sebelum hasil pekerjaan dikirim"
+                });
+            }
 
-            const existingDelivery =
-                await db.orm.public.Delivery
-                    .where({
-                        orderId
-                    })
-                    .first();
-
-            if (existingDelivery) {
+            if (order.delivery) {
                 return res.status(409).json({
                     message:
                         "Hasil pekerjaan untuk order ini sudah dikirim"
                 });
             }
 
-            const delivery =
-                await db.orm.public.Delivery.create({
+            const delivery = await db.delivery.create({
+                data: {
                     orderId,
                     fileUrl,
                     fileName,
                     note: note || null
-                });
+                }
+            });
 
-            await db.orm.public.Order
-                .where({
+            const updatedOrder = await db.order.update({
+                where: {
                     id: orderId
-                })
-                .update({
-                    status: "delivered"
-                });
+                },
+                data: {
+                    status: "COMPLETED"
+                }
+            });
 
             res.status(201).json({
                 message:
                     "Hasil pekerjaan berhasil dikirim",
-                delivery
+                delivery,
+                order: updatedOrder
             });
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "CREATE DELIVERY ERROR:",
+                error
+            );
 
             res.status(500).json({
                 message:
@@ -852,33 +984,35 @@ app.post(
     }
 );
 
-app.post(
-    "/api/reviews",
+
+// =========================
+// GET DELIVERY
+// =========================
+
+app.get(
+    "/api/orders/:orderId/delivery",
     authenticateToken,
-    authorizeRole("client"),
     async (req, res) => {
         try {
-            const { orderId, rating, comment } = req.body;
+            const orderId = parseInt(
+                req.params.orderId,
+                10
+            );
 
-            if (!orderId || !rating) {
+            if (isNaN(orderId)) {
                 return res.status(400).json({
-                    message: "Order ID dan rating wajib diisi"
+                    message: "ID order tidak valid"
                 });
             }
 
-            if (rating < 1 || rating > 5) {
-                return res.status(400).json({
-                    message: "Rating harus antara 1 sampai 5"
-                });
-            }
-
-            // Cari order milik client yang sedang login
-            const order = await db.orm.public.Order
-                .where({
-                    id: parseInt(orderId),
-                    clientId: req.user.userId
-                })
-                .first();
+            const order = await db.order.findUnique({
+                where: {
+                    id: orderId
+                },
+                include: {
+                    service: true
+                }
+            });
 
             if (!order) {
                 return res.status(404).json({
@@ -886,70 +1020,63 @@ app.post(
                 });
             }
 
-            // Order harus sudah selesai
-            if (order.status !== "completed") {
-                return res.status(400).json({
-                    message: "Order belum selesai, belum bisa memberikan review"
+            const role = req.user.role?.toUpperCase();
+
+            if (role === "CLIENT") {
+
+                if (
+                    order.clientId !==
+                    req.user.userId
+                ) {
+                    return res.status(403).json({
+                        message:
+                            "Anda tidak memiliki akses ke order ini"
+                    });
+                }
+
+            } else if (role === "FREELANCER") {
+
+                if (
+                    order.service.freelancerId !==
+                    req.user.userId
+                ) {
+                    return res.status(403).json({
+                        message:
+                            "Anda tidak memiliki akses ke order ini"
+                    });
+                }
+
+            } else {
+                return res.status(403).json({
+                    message: "Akses ditolak"
                 });
             }
 
-            // Cek apakah order sudah pernah direview
-            const existingReview = await db.orm.public.Review
-                .where({
-                    orderId: parseInt(orderId)
-                })
-                .first();
+            const delivery =
+                await db.delivery.findUnique({
+                    where: {
+                        orderId
+                    }
+                });
 
-            if (existingReview) {
-                return res.status(409).json({
-                    message: "Order ini sudah diberikan review"
+            if (!delivery) {
+                return res.status(404).json({
+                    message:
+                        "Hasil pekerjaan belum dikirim"
                 });
             }
 
-            // Buat review
-            const review = await db.orm.public.Review.create({
-                rating: parseInt(rating),
-                comment: comment || null,
-                clientId: req.user.userId,
-                serviceId: order.serviceId,
-                orderId: parseInt(orderId)
-            });
-
-            // Ambil semua review service
-            const reviews = await db.orm.public.Review
-                .where({
-                    serviceId: order.serviceId
-                })
-                .all();
-
-            // Hitung rata-rata rating
-            const totalRating = reviews.reduce(
-                (total, item) => total + item.rating,
-                0
-            );
-
-            const averageRating = totalRating / reviews.length;
-
-            // Update rating service
-            await db.orm.public.Service
-                .where({
-                    id: order.serviceId
-                })
-                .update({
-                    rating: averageRating
-                });
-
-            res.status(201).json({
-                message: "Review berhasil dibuat",
-                review,
-                serviceRating: averageRating
-            });
+            res.json(delivery);
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "GET DELIVERY ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal membuat review",
+                message:
+                    "Gagal mengambil hasil pekerjaan",
                 error: error.message
             });
         }
@@ -957,48 +1084,290 @@ app.post(
 );
 
 
-app.get("/api/services/:id/reviews", async (req, res) => {
-    try {
-        const serviceId = parseInt(req.params.id);
+// =========================
+// COMPLETE ORDER
+// =========================
 
-        const reviews = await db.orm.public.Review
-            .where({
-                serviceId
-            })
-            .all();
-
-        res.json(reviews);
-
-    } catch (error) {
-        console.error(error);
-
-        res.status(500).json({
-            message: "Gagal mengambil review",
-            error: error.message
-        });
-    }
-});
-
-
-app.get(
-    "/api/favorites",
+app.put(
+    "/api/orders/:orderId/complete",
     authenticateToken,
     authorizeRole("client"),
     async (req, res) => {
         try {
-            const favorites = await db.orm.public.Favorite
-                .where({
-                    clientId: req.user.userId
-                })
-                .all();
+            const orderId = parseInt(
+                req.params.orderId,
+                10
+            );
 
-            res.json(favorites);
+            if (isNaN(orderId)) {
+                return res.status(400).json({
+                    message: "ID order tidak valid"
+                });
+            }
+
+            const order = await db.order.findUnique({
+                where: {
+                    id: orderId
+                },
+                include: {
+                    delivery: true
+                }
+            });
+
+            if (!order) {
+                return res.status(404).json({
+                    message: "Order tidak ditemukan"
+                });
+            }
+
+            if (
+                order.clientId !==
+                req.user.userId
+            ) {
+                return res.status(403).json({
+                    message:
+                        "Anda tidak memiliki akses ke order ini"
+                });
+            }
+
+            if (!order.delivery) {
+                return res.status(400).json({
+                    message:
+                        "Hasil pekerjaan belum dikirim"
+                });
+            }
+
+            if (order.status !== "COMPLETED") {
+                return res.status(400).json({
+                    message:
+                        "Order belum memiliki hasil pekerjaan yang dapat diterima"
+                });
+            }
+
+            res.json({
+                message:
+                    "Hasil pekerjaan berhasil diterima",
+                order
+            });
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "COMPLETE ORDER ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal mengambil favorite",
+                message:
+                    "Gagal menyelesaikan order",
+                error: error.message
+            });
+        }
+    }
+);
+
+// =========================
+// REVIEW & RATING
+// =========================
+
+// CREATE REVIEW
+app.post(
+    "/api/reviews",
+    authenticateToken,
+    authorizeRole("client"),
+    async (req, res) => {
+        try {
+            const {
+                orderId,
+                rating,
+                comment
+            } = req.body;
+
+            const parsedOrderId = parseInt(orderId, 10);
+            const parsedRating = parseInt(rating, 10);
+
+            if (isNaN(parsedOrderId) || isNaN(parsedRating)) {
+                return res.status(400).json({
+                    message:
+                        "Order ID dan rating wajib diisi dan harus berupa angka"
+                });
+            }
+
+            if (
+                parsedRating < 1 ||
+                parsedRating > 5
+            ) {
+                return res.status(400).json({
+                    message:
+                        "Rating harus antara 1 sampai 5"
+                });
+            }
+
+            // Cari order milik client yang sedang login
+            const order = await db.order.findUnique({
+                where: {
+                    id: parsedOrderId
+                },
+                include: {
+                    review: true
+                }
+            });
+
+            if (!order) {
+                return res.status(404).json({
+                    message:
+                        "Order tidak ditemukan"
+                });
+            }
+
+            // Pastikan order milik client
+            if (
+                order.clientId !==
+                req.user.userId
+            ) {
+                return res.status(403).json({
+                    message:
+                        "Anda tidak memiliki akses ke order ini"
+                });
+            }
+
+            // Order harus sudah selesai
+            if (
+                order.status !==
+                "COMPLETED"
+            ) {
+                return res.status(400).json({
+                    message:
+                        "Order belum selesai, belum bisa memberikan review"
+                });
+            }
+
+            // Cek apakah sudah pernah direview
+            if (order.review) {
+                return res.status(409).json({
+                    message:
+                        "Order ini sudah diberikan review"
+                });
+            }
+
+            // Buat review
+            const review = await db.review.create({
+                data: {
+                    rating: parsedRating,
+                    comment: comment || null,
+                    userId: req.user.userId,
+                    serviceId: order.serviceId,
+                    orderId: order.id
+                }
+            });
+
+            // Ambil semua review service
+            const reviews =
+                await db.review.findMany({
+                    where: {
+                        serviceId:
+                            order.serviceId
+                    },
+                    select: {
+                        rating: true
+                    }
+                });
+
+            // Hitung rata-rata rating
+            const totalRating =
+                reviews.reduce(
+                    (total, item) =>
+                        total + item.rating,
+                    0
+                );
+
+            const averageRating =
+                reviews.length > 0
+                    ? totalRating /
+                      reviews.length
+                    : 0;
+
+            // Update rating service
+            await db.service.update({
+                where: {
+                    id: order.serviceId
+                },
+                data: {
+                    rating: averageRating
+                }
+            });
+
+            res.status(201).json({
+                message:
+                    "Review berhasil dibuat",
+                review,
+                serviceRating:
+                    averageRating
+            });
+
+        } catch (error) {
+            console.error(
+                "CREATE REVIEW ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal membuat review",
+                error: error.message
+            });
+        }
+    }
+);
+
+
+// GET REVIEWS SERVICE
+app.get(
+    "/api/services/:id/reviews",
+    async (req, res) => {
+        try {
+            const serviceId =
+                parseInt(
+                    req.params.id,
+                    10
+                );
+
+            if (isNaN(serviceId)) {
+                return res.status(400).json({
+                    message:
+                        "Service ID tidak valid"
+                });
+            }
+
+            const reviews =
+                await db.review.findMany({
+                    where: {
+                        serviceId
+                    },
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                profileImage: true
+                            }
+                        }
+                    },
+                    orderBy: {
+                        createdAt: "desc"
+                    }
+                });
+
+            res.json(reviews);
+
+        } catch (error) {
+            console.error(
+                "GET REVIEWS ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal mengambil review",
                 error: error.message
             });
         }
@@ -1059,598 +1428,499 @@ app.post(
     }
 );
 
-app.delete(
-    "/api/favorites/:serviceId",
-    authenticateToken,
-    authorizeRole("client"),
-    async (req, res) => {
-        try {
-            const serviceId = parseInt(req.params.serviceId);
+// =========================
+// CHAT / MESSAGING
+// =========================
 
-            const favorite = await db.orm.public.Favorite
-                .where({
-                    clientId: req.user.userId,
-                    serviceId
-                })
-                .first();
-
-            if (!favorite) {
-                return res.status(404).json({
-                    message: "Favorite tidak ditemukan"
-                });
-            }
-
-            await db.orm.public.Favorite
-                .where({
-                    id: favorite.id
-                })
-                .delete();
-
-            res.json({
-                message: "Favorite berhasil dihapus"
-            });
-
-        } catch (error) {
-            console.error(error);
-
-            res.status(500).json({
-                message: "Gagal menghapus favorite",
-                error: error.message
-            });
-        }
-    }
-);
-
+// CREATE CONVERSATION
 app.post(
     "/api/conversations",
     authenticateToken,
     authorizeRole("client"),
     async (req, res) => {
         try {
-            const { freelancerId } = req.body;
+            const clientId = req.user.userId;
+            const freelancerId = parseInt(
+                req.body.freelancerId,
+                10
+            );
 
-            if (!freelancerId) {
+            if (isNaN(freelancerId)) {
                 return res.status(400).json({
-                    message: "Freelancer ID wajib diisi"
+                    message:
+                        "Freelancer ID wajib diisi dan harus berupa angka"
                 });
             }
 
-            const freelancer = await db.orm.public.User
-                .where({
-                    id: parseInt(freelancerId),
-                    role: "freelancer"
-                })
-                .first();
+            // Pastikan freelancer ada
+            const freelancer = await db.user.findFirst({
+                where: {
+                    id: freelancerId,
+                    role: "FREELANCER"
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    role: true,
+                    profileImage: true
+                }
+            });
 
             if (!freelancer) {
                 return res.status(404).json({
-                    message: "Freelancer tidak ditemukan"
+                    message:
+                        "Freelancer tidak ditemukan"
                 });
             }
 
+            // Cari conversation yang sudah ada
             const existingConversation =
-                await db.orm.public.Conversation
-                    .where({
-                        clientId: req.user.userId,
-                        freelancerId: parseInt(freelancerId)
-                    })
-                    .first();
+                await db.conversation.findFirst({
+                    where: {
+                        AND: [
+                            {
+                                participants: {
+                                    some: {
+                                        userId: clientId
+                                    }
+                                }
+                            },
+                            {
+                                participants: {
+                                    some: {
+                                        userId: freelancerId
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    include: {
+                        participants: {
+                            include: {
+                                user: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        role: true,
+                                        profileImage: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
 
             if (existingConversation) {
                 return res.json({
-                    message: "Conversation sudah ada",
-                    conversation: existingConversation
+                    message:
+                        "Conversation sudah ada",
+                    conversation:
+                        existingConversation
                 });
             }
 
+            // Buat conversation baru
             const conversation =
-                await db.orm.public.Conversation.create({
-                    clientId: req.user.userId,
-                    freelancerId: parseInt(freelancerId)
+                await db.conversation.create({
+                    data: {
+                        participants: {
+                            create: [
+                                {
+                                    userId: clientId
+                                },
+                                {
+                                    userId: freelancerId
+                                }
+                            ]
+                        }
+                    },
+                    include: {
+                        participants: {
+                            include: {
+                                user: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        role: true,
+                                        profileImage: true
+                                    }
+                                }
+                            }
+                        }
+                    }
                 });
 
             res.status(201).json({
-                message: "Conversation berhasil dibuat",
+                message:
+                    "Conversation berhasil dibuat",
                 conversation
             });
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "CREATE CONVERSATION ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal membuat conversation",
+                message:
+                    "Gagal membuat conversation",
                 error: error.message
             });
         }
     }
 );
 
+
+// GET SEMUA CONVERSATION USER
 app.get(
     "/api/conversations",
     authenticateToken,
     async (req, res) => {
         try {
             const userId = req.user.userId;
-            const role = req.user.role;
 
-            let conversations;
-
-            if (role === "client") {
-                conversations =
-                    await db.orm.public.Conversation
-                        .where({
-                            clientId: userId
-                        })
-                        .all();
-
-            } else if (role === "freelancer") {
-                conversations =
-                    await db.orm.public.Conversation
-                        .where({
-                            freelancerId: userId
-                        })
-                        .all();
-
-            } else {
-                return res.status(403).json({
-                    message: "Anda tidak memiliki akses"
+            const participations =
+                await db.conversationParticipant.findMany({
+                    where: {
+                        userId
+                    },
+                    include: {
+                        conversation: {
+                            include: {
+                                participants: {
+                                    include: {
+                                        user: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                email: true,
+                                                role: true,
+                                                profileImage: true
+                                            }
+                                        }
+                                    }
+                                },
+                                messages: {
+                                    orderBy: {
+                                        createdAt:
+                                            "desc"
+                                    },
+                                    take: 1
+                                }
+                            }
+                        }
+                    }
                 });
-            }
+
+            const conversations =
+                participations
+                    .map(item => ({
+                        id:
+                            item.conversation.id,
+                        createdAt:
+                            item.conversation
+                                .createdAt,
+                        updatedAt:
+                            item.conversation
+                                .updatedAt,
+                        participants:
+                            item.conversation
+                                .participants
+                                .map(
+                                    participant =>
+                                        participant.user
+                                ),
+                        lastMessage:
+                            item.conversation
+                                .messages[0] ||
+                            null
+                    }))
+                    .sort(
+                        (a, b) =>
+                            new Date(
+                                b.updatedAt
+                            ) -
+                            new Date(
+                                a.updatedAt
+                            )
+                    );
 
             res.json(conversations);
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "GET CONVERSATIONS ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal mengambil conversation",
+                message:
+                    "Gagal mengambil conversation",
                 error: error.message
             });
         }
     }
 );
 
+
+// GET DETAIL CONVERSATION
 app.get(
     "/api/conversations/:id",
     authenticateToken,
     async (req, res) => {
         try {
-            const conversationId = parseInt(req.params.id);
+            const conversationId =
+                parseInt(
+                    req.params.id,
+                    10
+                );
 
-            const conversation =
-                await db.orm.public.Conversation
-                    .where({
-                        id: conversationId
-                    })
-                    .first();
-
-            if (!conversation) {
-                return res.status(404).json({
-                    message: "Conversation tidak ditemukan"
+            if (isNaN(conversationId)) {
+                return res.status(400).json({
+                    message:
+                        "Conversation ID tidak valid"
                 });
             }
 
-            if (
-                conversation.clientId !== req.user.userId &&
-                conversation.freelancerId !== req.user.userId
-            ) {
+            // Pastikan user participant
+            const participant =
+                await db.conversationParticipant.findUnique({
+                    where: {
+                        userId_conversationId: {
+                            userId:
+                                req.user.userId,
+                            conversationId
+                        }
+                    }
+                });
+
+            if (!participant) {
                 return res.status(403).json({
-                    message: "Anda tidak memiliki akses"
+                    message:
+                        "Anda tidak memiliki akses ke conversation ini"
+                });
+            }
+
+            const conversation =
+                await db.conversation.findUnique({
+                    where: {
+                        id: conversationId
+                    },
+                    include: {
+                        participants: {
+                            include: {
+                                user: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        role: true,
+                                        profileImage: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+            if (!conversation) {
+                return res.status(404).json({
+                    message:
+                        "Conversation tidak ditemukan"
                 });
             }
 
             res.json(conversation);
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "GET CONVERSATION ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal mengambil conversation",
+                message:
+                    "Gagal mengambil conversation",
                 error: error.message
             });
         }
     }
 );
 
+
+// SEND MESSAGE
 app.post(
     "/api/conversations/:id/messages",
     authenticateToken,
     async (req, res) => {
         try {
-            const conversationId = parseInt(req.params.id);
-            const { content } = req.body;
+            const conversationId =
+                parseInt(
+                    req.params.id,
+                    10
+                );
 
-            if (!content || !content.trim()) {
+            const content =
+                req.body.content?.trim();
+
+            if (isNaN(conversationId)) {
                 return res.status(400).json({
-                    message: "Pesan tidak boleh kosong"
+                    message:
+                        "Conversation ID tidak valid"
                 });
             }
 
-            const conversation =
-                await db.orm.public.Conversation
-                    .where({
-                        id: conversationId
-                    })
-                    .first();
-
-            if (!conversation) {
-                return res.status(404).json({
-                    message: "Conversation tidak ditemukan"
+            if (!content) {
+                return res.status(400).json({
+                    message:
+                        "Pesan tidak boleh kosong"
                 });
             }
 
-            // Pastikan user adalah bagian dari conversation
-            if (
-                conversation.clientId !== req.user.userId &&
-                conversation.freelancerId !== req.user.userId
-            ) {
+            // Pastikan user participant
+            const participant =
+                await db.conversationParticipant.findUnique({
+                    where: {
+                        userId_conversationId: {
+                            userId:
+                                req.user.userId,
+                            conversationId
+                        }
+                    }
+                });
+
+            if (!participant) {
                 return res.status(403).json({
-                    message: "Anda tidak memiliki akses ke conversation ini"
+                    message:
+                        "Anda tidak memiliki akses ke conversation ini"
                 });
             }
 
             const message =
-                await db.orm.public.Message.create({
-                    conversationId,
-                    senderId: req.user.userId,
-                    content: content.trim()
+                await db.message.create({
+                    data: {
+                        conversationId,
+                        senderId:
+                            req.user.userId,
+                        content
+                    },
+                    include: {
+                        sender: {
+                            select: {
+                                id: true,
+                                name: true,
+                                role: true,
+                                profileImage: true
+                            }
+                        }
+                    }
                 });
 
+            // Update waktu conversation
+            await db.conversation.update({
+                where: {
+                    id: conversationId
+                },
+                data: {
+                    updatedAt: new Date()
+                }
+            });
+
             res.status(201).json({
-                message: "Pesan berhasil dikirim",
+                message:
+                    "Pesan berhasil dikirim",
                 data: message
             });
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "SEND MESSAGE ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal mengirim pesan",
+                message:
+                    "Gagal mengirim pesan",
                 error: error.message
             });
         }
     }
 );
 
+
+// GET MESSAGES
 app.get(
     "/api/conversations/:id/messages",
     authenticateToken,
     async (req, res) => {
         try {
-            const conversationId = parseInt(req.params.id);
+            const conversationId =
+                parseInt(
+                    req.params.id,
+                    10
+                );
 
-            const conversation =
-                await db.orm.public.Conversation
-                    .where({
-                        id: conversationId
-                    })
-                    .first();
-
-            if (!conversation) {
-                return res.status(404).json({
-                    message: "Conversation tidak ditemukan"
+            if (isNaN(conversationId)) {
+                return res.status(400).json({
+                    message:
+                        "Conversation ID tidak valid"
                 });
             }
 
-            // Pastikan user adalah bagian dari conversation
-            if (
-                conversation.clientId !== req.user.userId &&
-                conversation.freelancerId !== req.user.userId
-            ) {
+            // Pastikan user participant
+            const participant =
+                await db.conversationParticipant.findUnique({
+                    where: {
+                        userId_conversationId: {
+                            userId:
+                                req.user.userId,
+                            conversationId
+                        }
+                    }
+                });
+
+            if (!participant) {
                 return res.status(403).json({
-                    message: "Anda tidak memiliki akses"
+                    message:
+                        "Anda tidak memiliki akses ke conversation ini"
                 });
             }
 
             const messages =
-                await db.orm.public.Message
-                    .where({
+                await db.message.findMany({
+                    where: {
                         conversationId
-                    })
-                    .all();
+                    },
+                    include: {
+                        sender: {
+                            select: {
+                                id: true,
+                                name: true,
+                                role: true,
+                                profileImage: true
+                            }
+                        }
+                    },
+                    orderBy: {
+                        createdAt: "asc"
+                    }
+                });
 
             res.json(messages);
 
         } catch (error) {
-            console.error(error);
+            console.error(
+                "GET MESSAGES ERROR:",
+                error
+            );
 
             res.status(500).json({
-                message: "Gagal mengambil pesan",
-                error: error.message
-            });
-        }
-    }
-);
-
-app.get("/api/services/:id", async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-
-        const service = await db.service.findUnique({
-            where: {
-                id: id
-            },
-            include: {
-                freelancer: true
-            }
-        });
-
-        if (!service) {
-            return res.status(404).json({
-                message: "Jasa tidak ditemukan"
-            });
-        }
-
-        res.json(service);
-
-    } catch (error) {
-        console.error("Get service detail error:", error);
-
-        res.status(500).json({
-            message: "Gagal mengambil detail jasa"
-        });
-    }
-});
-
-app.post(
-    "/api/conversations",
-    authenticateToken,
-    async (req, res) => {
-        try {
-            const { freelancerId } = req.body;
-
-            if (!freelancerId) {
-                return res.status(400).json({
-                    message: "Freelancer ID wajib diisi"
-                });
-            }
-
-            const freelancer =
-                await db.orm.public.User
-                    .where({
-                        id: parseInt(freelancerId),
-                        role: "freelancer"
-                    })
-                    .first();
-
-            if (!freelancer) {
-                return res.status(404).json({
-                    message: "Freelancer tidak ditemukan"
-                });
-            }
-
-            const clientId = req.user.userId;
-
-            let conversation =
-                await db.orm.public.Conversation
-                    .where({
-                        clientId,
-                        freelancerId: parseInt(freelancerId)
-                    })
-                    .first();
-
-            if (conversation) {
-                return res.json({
-                    message: "Conversation sudah ada",
-                    conversation
-                });
-            }
-
-            conversation =
-                await db.orm.public.Conversation.create({
-                    clientId,
-                    freelancerId: parseInt(freelancerId)
-                });
-
-            res.status(201).json({
-                message: "Conversation berhasil dibuat",
-                conversation
-            });
-
-        } catch (error) {
-            console.error(error);
-
-            res.status(500).json({
-                message: "Gagal membuat conversation",
-                error: error.message
-            });
-        }
-    }
-);
-
-app.get(
-    "/api/conversations",
-    authenticateToken,
-    async (req, res) => {
-        try {
-            const userId = req.user.userId;
-            const role = req.user.role;
-
-            let conversations;
-
-            if (role === "client") {
-                conversations =
-                    await db.orm.public.Conversation
-                        .where({
-                            clientId: userId
-                        })
-                        .all();
-            } else if (role === "freelancer") {
-                conversations =
-                    await db.orm.public.Conversation
-                        .where({
-                            freelancerId: userId
-                        })
-                        .all();
-            } else {
-                return res.status(403).json({
-                    message: "Akses ditolak"
-                });
-            }
-
-            res.json(conversations);
-
-        } catch (error) {
-            console.error(error);
-
-            res.status(500).json({
-                message: "Gagal mengambil conversation",
-                error: error.message
-            });
-        }
-    }
-);
-
-app.get(
-    "/api/conversations/:id",
-    authenticateToken,
-    async (req, res) => {
-        try {
-            const conversationId = parseInt(req.params.id);
-
-            const conversation =
-                await db.orm.public.Conversation
-                    .where({
-                        id: conversationId
-                    })
-                    .first();
-
-            if (!conversation) {
-                return res.status(404).json({
-                    message: "Conversation tidak ditemukan"
-                });
-            }
-
-            const userId = req.user.userId;
-
-            if (
-                conversation.clientId !== userId &&
-                conversation.freelancerId !== userId
-            ) {
-                return res.status(403).json({
-                    message: "Anda tidak memiliki akses ke conversation ini"
-                });
-            }
-
-            res.json(conversation);
-
-        } catch (error) {
-            console.error(error);
-
-            res.status(500).json({
-                message: "Gagal mengambil conversation",
-                error: error.message
-            });
-        }
-    }
-);
-
-app.post(
-    "/api/conversations/:id/messages",
-    authenticateToken,
-    async (req, res) => {
-        try {
-            const conversationId = parseInt(req.params.id);
-            const { content } = req.body;
-
-            if (!content || !content.trim()) {
-                return res.status(400).json({
-                    message: "Pesan wajib diisi"
-                });
-            }
-
-            const conversation =
-                await db.orm.public.Conversation
-                    .where({
-                        id: conversationId
-                    })
-                    .first();
-
-            if (!conversation) {
-                return res.status(404).json({
-                    message: "Conversation tidak ditemukan"
-                });
-            }
-
-            const userId = req.user.userId;
-
-            if (
-                conversation.clientId !== userId &&
-                conversation.freelancerId !== userId
-            ) {
-                return res.status(403).json({
-                    message: "Anda tidak memiliki akses ke conversation ini"
-                });
-            }
-
-            const message =
-                await db.orm.public.Message.create({
-                    conversationId,
-                    senderId: userId,
-                    content: content.trim()
-                });
-
-            res.status(201).json({
-                message: "Pesan berhasil dikirim",
-                data: message
-            });
-
-        } catch (error) {
-            console.error(error);
-
-            res.status(500).json({
-                message: "Gagal mengirim pesan",
-                error: error.message
-            });
-        }
-    }
-);
-
-app.get(
-    "/api/conversations/:id/messages",
-    authenticateToken,
-    async (req, res) => {
-        try {
-            const conversationId = parseInt(req.params.id);
-
-            const conversation =
-                await db.orm.public.Conversation
-                    .where({
-                        id: conversationId
-                    })
-                    .first();
-
-            if (!conversation) {
-                return res.status(404).json({
-                    message: "Conversation tidak ditemukan"
-                });
-            }
-
-            const userId = req.user.userId;
-
-            if (
-                conversation.clientId !== userId &&
-                conversation.freelancerId !== userId
-            ) {
-                return res.status(403).json({
-                    message: "Anda tidak memiliki akses ke conversation ini"
-                });
-            }
-
-            const messages =
-                await db.orm.public.Message
-                    .where({
-                        conversationId
-                    })
-                    .all();
-
-            res.json(messages);
-
-        } catch (error) {
-            console.error(error);
-
-            res.status(500).json({
-                message: "Gagal mengambil pesan",
+                message:
+                    "Gagal mengambil pesan",
                 error: error.message
             });
         }
@@ -1689,9 +1959,12 @@ function authenticateToken(req, res, next) {
     );
 }
 
-function authorizeRole(...allowedRoles) {
+function authorizeRole(role) {
     return (req, res, next) => {
-        if (!req.user || !allowedRoles.includes(req.user.role)) {
+        const userRole = req.user.role?.toUpperCase();
+        const requiredRole = role?.toUpperCase();
+
+        if (userRole !== requiredRole) {
             return res.status(403).json({
                 message: "Anda tidak memiliki akses"
             });
@@ -1705,34 +1978,862 @@ function authorizeRole(...allowedRoles) {
 // PROFILE
 // =========================
 
-app.get("/api/profile", authenticateToken, async (req, res) => {
-    try {
-        const user = await db.orm.public.User
-            .where({ id: req.user.userId })
-            .first();
+app.get(
+    "/api/profile",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const user = await db.user.findUnique({
+                where: {
+                    id: req.user.userId
+                },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    role: true,
+                    profileImage: true,
+                    bio: true,
+                    createdAt: true,
+                    updatedAt: true
+                }
+            });
 
-        if (!user) {
-            return res.status(404).json({
-                message: "User tidak ditemukan"
+            if (!user) {
+                return res.status(404).json({
+                    message: "User tidak ditemukan"
+                });
+            }
+
+            res.json(user);
+
+        } catch (error) {
+            console.error(
+                "GET PROFILE ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal mengambil profile",
+                error: error.message
             });
         }
-
-        res.json({
-            id: user.id,
-            email: user.email,
-            username: user.username,
-            name: user.name,
-            role: user.role
-        });
-
-    } catch (error) {
-        console.error(error);
-
-        res.status(500).json({
-            message: "Gagal mengambil profile"
-        });
     }
-});
+);
+
+// UPDATE PROFILE
+app.put(
+    "/api/profile",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const {
+                name,
+                bio,
+                profileImage
+            } = req.body;
+
+            if (!name) {
+                return res.status(400).json({
+                    message: "Nama wajib diisi"
+                });
+            }
+
+            const updatedUser =
+                await db.user.update({
+                    where: {
+                        id: req.user.userId
+                    },
+                    data: {
+                        name,
+                        bio: bio || null,
+                        profileImage:
+                            profileImage || null
+                    },
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true,
+                        role: true,
+                        profileImage: true,
+                        bio: true,
+                        createdAt: true,
+                        updatedAt: true
+                    }
+                });
+
+            res.json({
+                message:
+                    "Profile berhasil diperbarui",
+                user: updatedUser
+            });
+
+        } catch (error) {
+            console.error(
+                "UPDATE PROFILE ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal memperbarui profile",
+                error: error.message
+            });
+        }
+    }
+);
+
+// =========================
+// ADMIN - USER MANAGEMENT
+// =========================
+
+app.get(
+    "/api/admin/users",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const users = await db.user.findMany({
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    role: true,
+                    profileImage: true,
+                    bio: true,
+                    createdAt: true,
+                    updatedAt: true
+                },
+                orderBy: {
+                    createdAt: "desc"
+                }
+            });
+
+            res.json(users);
+
+        } catch (error) {
+            console.error(
+                "GET ADMIN USERS ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal mengambil data user",
+                error: error.message
+            });
+        }
+    }
+);
+
+app.put(
+    "/api/admin/users/:id",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const userId = parseInt(req.params.id, 10);
+            const { name, email, role, bio, profileImage } = req.body;
+
+            if (isNaN(userId)) {
+                return res.status(400).json({
+                    message: "User ID tidak valid"
+                });
+            }
+
+            const existingUser = await db.user.findUnique({
+                where: { id: userId }
+            });
+
+            if (!existingUser) {
+                return res.status(404).json({
+                    message: "User tidak ditemukan"
+                });
+            }
+
+            const normalizedRole = role?.toUpperCase();
+
+            if (
+                normalizedRole &&
+                !["CLIENT", "FREELANCER", "ADMIN"].includes(normalizedRole)
+            ) {
+                return res.status(400).json({
+                    message: "Role tidak valid"
+                });
+            }
+
+            const updatedUser = await db.user.update({
+                where: { id: userId },
+                data: {
+                    name: name ?? existingUser.name,
+                    email: email ?? existingUser.email,
+                    role: normalizedRole ?? existingUser.role,
+                    bio: bio ?? existingUser.bio,
+                    profileImage: profileImage ?? existingUser.profileImage
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    role: true,
+                    profileImage: true,
+                    bio: true,
+                    createdAt: true,
+                    updatedAt: true
+                }
+            });
+
+            res.json({
+                message: "User berhasil diperbarui",
+                user: updatedUser
+            });
+
+        } catch (error) {
+            console.error(
+                "UPDATE ADMIN USER ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal memperbarui user",
+                error: error.message
+            });
+        }
+    }
+);
+
+app.delete(
+    "/api/admin/users/:id",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const userId = parseInt(req.params.id, 10);
+
+            if (isNaN(userId)) {
+                return res.status(400).json({
+                    message: "User ID tidak valid"
+                });
+            }
+
+            if (userId === req.user.userId) {
+                return res.status(400).json({
+                    message: "Admin tidak dapat menghapus akun sendiri"
+                });
+            }
+
+            const existingUser = await db.user.findUnique({
+                where: { id: userId }
+            });
+
+            if (!existingUser) {
+                return res.status(404).json({
+                    message: "User tidak ditemukan"
+                });
+            }
+
+            await db.user.delete({
+                where: { id: userId }
+            });
+
+            res.json({
+                message: "User berhasil dihapus"
+            });
+
+        } catch (error) {
+            console.error(
+                "DELETE ADMIN USER ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal menghapus user",
+                error: error.message
+            });
+        }
+    }
+);
+
+// =========================
+// ADMIN - SERVICE MANAGEMENT
+// =========================
+
+app.get(
+    "/api/admin/services",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const services = await db.service.findMany({
+                include: {
+                    category: true,
+                    freelancer: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            profileImage: true
+                        }
+                    }
+                },
+                orderBy: {
+                    createdAt: "desc"
+                }
+            });
+
+            res.json(services);
+
+        } catch (error) {
+            console.error(
+                "GET ADMIN SERVICES ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal mengambil data jasa",
+                error: error.message
+            });
+        }
+    }
+);
+
+// DELETE SERVICE BY ADMIN
+app.delete(
+    "/api/admin/services/:id",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const serviceId = parseInt(req.params.id, 10);
+
+            if (isNaN(serviceId)) {
+                return res.status(400).json({
+                    message: "Service ID tidak valid"
+                });
+            }
+
+            const service = await db.service.findUnique({
+                where: {
+                    id: serviceId
+                }
+            });
+
+            if (!service) {
+                return res.status(404).json({
+                    message: "Jasa tidak ditemukan"
+                });
+            }
+
+            await db.service.delete({
+                where: {
+                    id: serviceId
+                }
+            });
+
+            res.json({
+                message: "Jasa berhasil dihapus oleh admin"
+            });
+
+        } catch (error) {
+            console.error(
+                "DELETE ADMIN SERVICE ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal menghapus jasa",
+                error: error.message
+            });
+        }
+    }
+);
+
+// =========================
+// ADMIN - CATEGORY MANAGEMENT
+// =========================
+
+app.get(
+    "/api/admin/categories",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const categories = await db.category.findMany({
+                include: {
+                    _count: {
+                        select: {
+                            services: true
+                        }
+                    }
+                },
+                orderBy: {
+                    name: "asc"
+                }
+            });
+
+            res.json(categories);
+
+        } catch (error) {
+            console.error(
+                "GET ADMIN CATEGORIES ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal mengambil data kategori",
+                error: error.message
+            });
+        }
+    }
+);
+
+// CREATE CATEGORY
+app.post(
+    "/api/admin/categories",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const name = req.body.name?.trim();
+
+            if (!name) {
+                return res.status(400).json({
+                    message: "Nama kategori wajib diisi"
+                });
+            }
+
+            const existingCategory = await db.category.findUnique({
+                where: {
+                    name
+                }
+            });
+
+            if (existingCategory) {
+                return res.status(409).json({
+                    message: "Kategori sudah ada"
+                });
+            }
+
+            const category = await db.category.create({
+                data: {
+                    name
+                }
+            });
+
+            res.status(201).json({
+                message: "Kategori berhasil dibuat",
+                category
+            });
+
+        } catch (error) {
+            console.error(
+                "CREATE ADMIN CATEGORY ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal membuat kategori",
+                error: error.message
+            });
+        }
+    }
+);
+
+// UPDATE CATEGORY
+app.put(
+    "/api/admin/categories/:id",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const categoryId = parseInt(req.params.id, 10);
+            const name = req.body.name?.trim();
+
+            if (isNaN(categoryId)) {
+                return res.status(400).json({
+                    message: "Category ID tidak valid"
+                });
+            }
+
+            if (!name) {
+                return res.status(400).json({
+                    message: "Nama kategori wajib diisi"
+                });
+            }
+
+            const existingCategory = await db.category.findUnique({
+                where: {
+                    id: categoryId
+                }
+            });
+
+            if (!existingCategory) {
+                return res.status(404).json({
+                    message: "Kategori tidak ditemukan"
+                });
+            }
+
+            const duplicateCategory = await db.category.findUnique({
+                where: {
+                    name
+                }
+            });
+
+            if (
+                duplicateCategory &&
+                duplicateCategory.id !== categoryId
+            ) {
+                return res.status(409).json({
+                    message: "Nama kategori sudah digunakan"
+                });
+            }
+
+            const updatedCategory = await db.category.update({
+                where: {
+                    id: categoryId
+                },
+                data: {
+                    name
+                }
+            });
+
+            res.json({
+                message: "Kategori berhasil diperbarui",
+                category: updatedCategory
+            });
+
+        } catch (error) {
+            console.error(
+                "UPDATE ADMIN CATEGORY ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal memperbarui kategori",
+                error: error.message
+            });
+        }
+    }
+);
+
+// DELETE CATEGORY
+app.delete(
+    "/api/admin/categories/:id",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const categoryId = parseInt(req.params.id, 10);
+
+            if (isNaN(categoryId)) {
+                return res.status(400).json({
+                    message: "Category ID tidak valid"
+                });
+            }
+
+            const category = await db.category.findUnique({
+                where: {
+                    id: categoryId
+                },
+                include: {
+                    _count: {
+                        select: {
+                            services: true
+                        }
+                    }
+                }
+            });
+
+            if (!category) {
+                return res.status(404).json({
+                    message: "Kategori tidak ditemukan"
+                });
+            }
+
+            if (category._count.services > 0) {
+                return res.status(409).json({
+                    message: "Kategori tidak dapat dihapus karena masih digunakan oleh jasa"
+                });
+            }
+
+            await db.category.delete({
+                where: {
+                    id: categoryId
+                }
+            });
+
+            res.json({
+                message: "Kategori berhasil dihapus"
+            });
+
+        } catch (error) {
+            console.error(
+                "DELETE ADMIN CATEGORY ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal menghapus kategori",
+                error: error.message
+            });
+        }
+    }
+);
+
+// =========================
+// ADMIN - REVIEW MANAGEMENT
+// =========================
+
+app.get(
+    "/api/admin/reviews",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const reviews = await db.review.findMany({
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            profileImage: true
+                        }
+                    },
+                    service: {
+                        select: {
+                            id: true,
+                            title: true,
+                            freelancer: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true
+                                }
+                            }
+                        }
+                    },
+                    order: {
+                        select: {
+                            id: true,
+                            status: true
+                        }
+                    }
+                },
+                orderBy: {
+                    createdAt: "desc"
+                }
+            });
+
+            res.json(reviews);
+
+        } catch (error) {
+            console.error(
+                "GET ADMIN REVIEWS ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal mengambil data review",
+                error: error.message
+            });
+        }
+    }
+);
+
+// DELETE REVIEW BY ADMIN
+app.delete(
+    "/api/admin/reviews/:id",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const reviewId = parseInt(req.params.id, 10);
+
+            if (isNaN(reviewId)) {
+                return res.status(400).json({
+                    message: "Review ID tidak valid"
+                });
+            }
+
+            const review = await db.review.findUnique({
+                where: {
+                    id: reviewId
+                }
+            });
+
+            if (!review) {
+                return res.status(404).json({
+                    message: "Review tidak ditemukan"
+                });
+            }
+
+            const serviceId = review.serviceId;
+
+            await db.review.delete({
+                where: {
+                    id: reviewId
+                }
+            });
+
+            const remainingReviews = await db.review.findMany({
+                where: {
+                    serviceId
+                },
+                select: {
+                    rating: true
+                }
+            });
+
+            const totalRating = remainingReviews.reduce(
+                (total, item) => total + item.rating,
+                0
+            );
+
+            const averageRating =
+                remainingReviews.length > 0
+                    ? totalRating / remainingReviews.length
+                    : 0;
+
+            await db.service.update({
+                where: {
+                    id: serviceId
+                },
+                data: {
+                    rating: averageRating
+                }
+            });
+
+            res.json({
+                message: "Review berhasil dihapus",
+                serviceRating: averageRating
+            });
+
+        } catch (error) {
+            console.error(
+                "DELETE ADMIN REVIEW ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal menghapus review",
+                error: error.message
+            });
+        }
+    }
+);
+
+// =========================
+// ADMIN - DASHBOARD
+// =========================
+
+app.get(
+    "/api/admin/dashboard",
+    authenticateToken,
+    authorizeRole("admin"),
+    async (req, res) => {
+        try {
+            const [
+                totalUsers,
+                totalClients,
+                totalFreelancers,
+                totalAdmins,
+                totalServices,
+                totalOrders,
+                totalReviews,
+                totalCategories,
+                pendingOrders,
+                completedOrders,
+                cancelledOrders
+            ] = await Promise.all([
+                db.user.count(),
+
+                db.user.count({
+                    where: {
+                        role: "CLIENT"
+                    }
+                }),
+
+                db.user.count({
+                    where: {
+                        role: "FREELANCER"
+                    }
+                }),
+
+                db.user.count({
+                    where: {
+                        role: "ADMIN"
+                    }
+                }),
+
+                db.service.count(),
+
+                db.order.count(),
+
+                db.review.count(),
+
+                db.category.count(),
+
+                db.order.count({
+                    where: {
+                        status: "PENDING"
+                    }
+                }),
+
+                db.order.count({
+                    where: {
+                        status: "COMPLETED"
+                    }
+                }),
+
+                db.order.count({
+                    where: {
+                        status: "CANCELLED"
+                    }
+                })
+            ]);
+
+            res.json({
+                users: {
+                    total: totalUsers,
+                    clients: totalClients,
+                    freelancers: totalFreelancers,
+                    admins: totalAdmins
+                },
+
+                services: {
+                    total: totalServices
+                },
+
+                orders: {
+                    total: totalOrders,
+                    pending: pendingOrders,
+                    completed: completedOrders,
+                    cancelled: cancelledOrders
+                },
+
+                reviews: {
+                    total: totalReviews
+                },
+
+                categories: {
+                    total: totalCategories
+                }
+            });
+
+        } catch (error) {
+            console.error(
+                "GET ADMIN DASHBOARD ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Gagal mengambil statistik dashboard",
+                error: error.message
+            });
+        }
+    }
+);
 
 // =========================
 // REGISTER
@@ -1742,21 +2843,23 @@ app.post("/api/auth/register", async (req, res) => {
     try {
         const {
             email,
-            username,
             name,
             password,
             role
         } = req.body;
 
-        if (!email || !username || !password) {
+        if (!email || !password) {
             return res.status(400).json({
-                message: "Email, username, dan password wajib diisi"
+                message: "Email dan password wajib diisi"
             });
         }
 
-        const existingUser = await db.orm.public.User
-            .where({ email })
-            .first();
+        // Cek apakah email sudah terdaftar
+        const existingUser = await db.user.findUnique({
+            where: {
+                email
+            }
+        });
 
         if (existingUser) {
             return res.status(409).json({
@@ -1764,24 +2867,22 @@ app.post("/api/auth/register", async (req, res) => {
             });
         }
 
-        const existingUsername = await db.orm.public.User
-            .where({ username })
-            .first();
-
-        if (existingUsername) {
-            return res.status(409).json({
-                message: "Username sudah digunakan"
-            });
-        }
-
+        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        const user = await db.orm.public.User.create({
-            email,
-            username,
-            name: name || null,
-            role: role || "client",
-            password: hashedPassword
+        // Normalisasi role
+        const userRole =
+            role?.toUpperCase() === "FREELANCER"
+                ? "FREELANCER"
+                : "CLIENT";
+
+        const user = await db.user.create({
+            data: {
+                email,
+                name: name || "",
+                password: hashedPassword,
+                role: userRole
+            }
         });
 
         res.status(201).json({
@@ -1789,14 +2890,13 @@ app.post("/api/auth/register", async (req, res) => {
             user: {
                 id: user.id,
                 email: user.email,
-                username: user.username,
                 name: user.name,
                 role: user.role
             }
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("REGISTER ERROR:", error);
 
         res.status(500).json({
             message: "Gagal melakukan register",
@@ -1804,12 +2904,14 @@ app.post("/api/auth/register", async (req, res) => {
         });
     }
 });
-
 // =========================
 // LOGIN
 // =========================
 
-app.post("/api/auth/login", async (req, res) => {
+app.post(
+    "/api/auth/login",
+    loginLimiter,
+    async (req, res) => {
     try {
         const { email, password } = req.body;
 
@@ -1819,9 +2921,12 @@ app.post("/api/auth/login", async (req, res) => {
             });
         }
 
-        const user = await db.orm.public.User
-            .where({ email })
-            .first();
+        // Cari user berdasarkan email
+        const user = await db.user.findUnique({
+            where: {
+                email
+            }
+        });
 
         if (!user) {
             return res.status(401).json({
@@ -1829,6 +2934,7 @@ app.post("/api/auth/login", async (req, res) => {
             });
         }
 
+        // Cek password
         const passwordMatch = await bcrypt.compare(
             password,
             user.password
@@ -1840,6 +2946,7 @@ app.post("/api/auth/login", async (req, res) => {
             });
         }
 
+        // Buat JWT
         const token = jwt.sign(
             {
                 userId: user.id,
@@ -1857,14 +2964,13 @@ app.post("/api/auth/login", async (req, res) => {
             user: {
                 id: user.id,
                 email: user.email,
-                username: user.username,
                 name: user.name,
                 role: user.role
             }
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("LOGIN ERROR:", error);
 
         res.status(500).json({
             message: "Gagal melakukan login",
@@ -1872,7 +2978,6 @@ app.post("/api/auth/login", async (req, res) => {
         });
     }
 });
-
 // =========================
 // GET DELIVERY
 // =========================
@@ -2031,12 +3136,285 @@ app.put(
     }
 );
 
+// =========================
+// PORTFOLIO
+// =========================
+
+// GET PORTFOLIO MILIK FREELANCER
+app.get(
+    "/api/portfolio",
+    authenticateToken,
+    authorizeRole("freelancer"),
+    async (req, res) => {
+        try {
+            const portfolios =
+                await db.portfolio.findMany({
+                    where: {
+                        freelancerId:
+                            req.user.userId
+                    },
+                    orderBy: {
+                        createdAt: "desc"
+                    }
+                });
+
+            res.json(portfolios);
+
+        } catch (error) {
+            console.error(
+                "GET PORTFOLIO ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal mengambil portfolio",
+                error: error.message
+            });
+        }
+    }
+);
+
+
+// CREATE PORTFOLIO
+app.post(
+    "/api/portfolio",
+    authenticateToken,
+    authorizeRole("freelancer"),
+    async (req, res) => {
+        try {
+            const {
+                title,
+                description,
+                image,
+                link
+            } = req.body;
+
+            if (!title) {
+                return res.status(400).json({
+                    message:
+                        "Judul portfolio wajib diisi"
+                });
+            }
+
+            const portfolio =
+                await db.portfolio.create({
+                    data: {
+                        title,
+                        description:
+                            description || null,
+                        image:
+                            image || null,
+                        link:
+                            link || null,
+                        freelancerId:
+                            req.user.userId
+                    }
+                });
+
+            res.status(201).json({
+                message:
+                    "Portfolio berhasil ditambahkan",
+                portfolio
+            });
+
+        } catch (error) {
+            console.error(
+                "CREATE PORTFOLIO ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal menambahkan portfolio",
+                error: error.message
+            });
+        }
+    }
+);
+
+
+// UPDATE PORTFOLIO
+app.put(
+    "/api/portfolio/:id",
+    authenticateToken,
+    authorizeRole("freelancer"),
+    async (req, res) => {
+        try {
+            const portfolioId =
+                parseInt(
+                    req.params.id,
+                    10
+                );
+
+            if (isNaN(portfolioId)) {
+                return res.status(400).json({
+                    message:
+                        "ID portfolio tidak valid"
+                });
+            }
+
+            const {
+                title,
+                description,
+                image,
+                link
+            } = req.body;
+
+            if (!title) {
+                return res.status(400).json({
+                    message:
+                        "Judul portfolio wajib diisi"
+                });
+            }
+
+            const existingPortfolio =
+                await db.portfolio.findUnique({
+                    where: {
+                        id: portfolioId
+                    }
+                });
+
+            if (!existingPortfolio) {
+                return res.status(404).json({
+                    message:
+                        "Portfolio tidak ditemukan"
+                });
+            }
+
+            if (
+                existingPortfolio.freelancerId !==
+                req.user.userId
+            ) {
+                return res.status(403).json({
+                    message:
+                        "Anda tidak memiliki akses ke portfolio ini"
+                });
+            }
+
+            const updatedPortfolio =
+                await db.portfolio.update({
+                    where: {
+                        id: portfolioId
+                    },
+                    data: {
+                        title,
+                        description:
+                            description || null,
+                        image:
+                            image || null,
+                        link:
+                            link || null
+                    }
+                });
+
+            res.json({
+                message:
+                    "Portfolio berhasil diperbarui",
+                portfolio:
+                    updatedPortfolio
+            });
+
+        } catch (error) {
+            console.error(
+                "UPDATE PORTFOLIO ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal memperbarui portfolio",
+                error: error.message
+            });
+        }
+    }
+);
+
+
+// DELETE PORTFOLIO
+app.delete(
+    "/api/portfolio/:id",
+    authenticateToken,
+    authorizeRole("freelancer"),
+    async (req, res) => {
+        try {
+            const portfolioId =
+                parseInt(
+                    req.params.id,
+                    10
+                );
+
+            if (isNaN(portfolioId)) {
+                return res.status(400).json({
+                    message:
+                        "ID portfolio tidak valid"
+                });
+            }
+
+            const existingPortfolio =
+                await db.portfolio.findUnique({
+                    where: {
+                        id: portfolioId
+                    }
+                });
+
+            if (!existingPortfolio) {
+                return res.status(404).json({
+                    message:
+                        "Portfolio tidak ditemukan"
+                });
+            }
+
+            if (
+                existingPortfolio.freelancerId !==
+                req.user.userId
+            ) {
+                return res.status(403).json({
+                    message:
+                        "Anda tidak memiliki akses ke portfolio ini"
+                });
+            }
+
+            await db.portfolio.delete({
+                where: {
+                    id: portfolioId
+                }
+            });
+
+            res.json({
+                message:
+                    "Portfolio berhasil dihapus"
+            });
+
+        } catch (error) {
+            console.error(
+                "DELETE PORTFOLIO ERROR:",
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    "Gagal menghapus portfolio",
+                error: error.message
+            });
+        }
+    }
+);
+
 
 // =========================
 // START SERVER
 // =========================
 
 const PORT = process.env.PORT || 3000;
+
+app.use((err, req, res, next) => {
+    console.error("SERVER ERROR:", err);
+
+    res.status(500).json({
+        message: "Terjadi kesalahan pada server"
+    });
+});
 
 app.listen(PORT, () => {
     console.log(`SkillMarket API berjalan di port ${PORT}`);
