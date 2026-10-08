@@ -143,6 +143,60 @@ app.get("/api/services", async (req, res) => {
 });
 
 // =========================
+// GET SERVICE BY ID
+// =========================
+
+app.get("/api/services/:id", async (req, res) => {
+    try {
+        const serviceId = parseInt(req.params.id, 10);
+
+        if (isNaN(serviceId)) {
+            return res.status(400).json({
+                message: "Service ID tidak valid"
+            });
+        }
+
+        const service = await db.service.findUnique({
+            where: {
+                id: serviceId
+            },
+            include: {
+                category: true,
+                freelancer: {
+                    select: {
+                        id: true,
+                        name: true,
+                        profileImage: true,
+                        bio: true
+                    }
+                }
+            }
+        });
+
+        if (!service) {
+            return res.status(404).json({
+                message: "Jasa tidak ditemukan"
+            });
+        }
+
+        res.json({
+            data: service
+        });
+
+    } catch (error) {
+        console.error(
+            "GET /api/services/:id error:",
+            error
+        );
+
+        res.status(500).json({
+            message: "Gagal mengambil detail jasa",
+            error: error.message
+        });
+    }
+});
+
+// =========================
 // CREATE SERVICE
 // =========================
 
@@ -694,55 +748,42 @@ app.get(
 );
 
 
-// UPDATE STATUS ORDER
+
+ // UPDATE STATUS ORDER
 app.put(
     "/api/freelancer/orders/:id/status",
     authenticateToken,
-    authorizeRole("freelancer"),
+    authorizeRole("FREELANCER"),
     async (req, res) => {
         try {
-            const orderId = parseInt(
-                req.params.id,
-                10
-            );
+            const orderId = Number(req.params.id);
+            const userId = Number(req.user.userId);
+            const normalizedStatus = req.body.status?.toUpperCase();
 
-            const { status } = req.body;
-
-            if (isNaN(orderId)) {
+            if (!Number.isInteger(orderId) || orderId <= 0) {
                 return res.status(400).json({
                     message: "ID order tidak valid"
                 });
             }
 
+            // Freelancer hanya boleh menerima atau menolak order,
+            // lalu memulai pekerjaan. Penyelesaian dilakukan client.
             const allowedStatus = [
-                "PENDING",
                 "IN_PROGRESS",
-                "COMPLETED",
                 "CANCELLED"
             ];
 
-            const normalizedStatus =
-                status?.toUpperCase();
-
-            if (
-                !allowedStatus.includes(
-                    normalizedStatus
-                )
-            ) {
+            if (!allowedStatus.includes(normalizedStatus)) {
                 return res.status(400).json({
-                    message: "Status order tidak valid"
+                    message:
+                        "Status tidak diizinkan. Freelancer hanya dapat menerima atau membatalkan order sesuai aturan."
                 });
             }
 
-            const order =
-                await db.order.findUnique({
-                    where: {
-                        id: orderId
-                    },
-                    include: {
-                        service: true
-                    }
-                });
+            const order = await db.order.findUnique({
+                where: { id: orderId },
+                include: { service: true }
+            });
 
             if (!order) {
                 return res.status(404).json({
@@ -750,45 +791,59 @@ app.put(
                 });
             }
 
-            if (
-                order.service.freelancerId !==
-                req.user.userId
-            ) {
+            if (order.service.freelancerId !== userId) {
                 return res.status(403).json({
-                    message:
-                        "Anda tidak memiliki akses ke order ini"
+                    message: "Anda tidak memiliki akses ke order ini"
                 });
             }
 
-            const updatedOrder =
-                await db.order.update({
-                    where: {
-                        id: orderId
-                    },
-                    data: {
-                        status: normalizedStatus
-                    },
-                    include: {
-                        service: true
-                    }
-                });
+            // Validasi transisi status
+            const validTransition =
+                (order.status === "PENDING" &&
+                    ["IN_PROGRESS", "CANCELLED"].includes(normalizedStatus)) ||
+                (order.status === "IN_PROGRESS" &&
+                    normalizedStatus === "CANCELLED");
 
-            res.json({
-                message:
-                    "Status order berhasil diubah",
-                order: updatedOrder
+            if (!validTransition) {
+                return res.status(400).json({
+                    message:
+                        `Status tidak dapat diubah dari ${order.status} menjadi ${normalizedStatus}`
+                });
+            }
+
+            const updatedOrder = await db.order.update({
+                where: { id: orderId },
+                data: { status: normalizedStatus },
+                include: { service: true }
             });
 
-        } catch (error) {
-            console.error(
-                "UPDATE ORDER STATUS ERROR:",
-                error
-            );
+            // Notifikasi ke client jika status berubah
+            try {
+                await db.notification.create({
+                    data: {
+                        userId: order.clientId,
+                        title: "Status Pesanan Diperbarui",
+                        message:
+                            `Pesanan "${order.service.title}" berubah menjadi ${normalizedStatus.replaceAll("_", " ").toLowerCase()}.`,
+                        type: "ORDER_STATUS"
+                    }
+                });
+            } catch (notificationError) {
+                console.error(
+                    "ORDER STATUS NOTIFICATION ERROR:",
+                    notificationError
+                );
+            }
 
-            res.status(500).json({
-                message:
-                    "Gagal mengubah status order",
-                error: error.message
+            return res.json({
+                message: "Status order berhasil diubah",
+                order: updatedOrder
+            });
+        } catch (error) {
+            console.error("UPDATE ORDER STATUS ERROR:", error);
+
+            return res.status(500).json({
+                message: "Gagal mengubah status order"
             });
         }
     }
@@ -815,12 +870,25 @@ app.post(
                 });
             }
 
-            const service =
-                await db.service.findUnique({
-                    where: {
-                        id: serviceId
-                    }
-                });
+           
+const service = await db.service.findUnique({
+    where: {
+        id: serviceId
+    },
+    include: {
+        freelancer: {
+            select: {
+                id: true
+            }
+        }
+    }
+});
+
+if (!service) {
+    return res.status(404).json({
+        message: "Jasa tidak ditemukan"
+    });
+}
 
             if (!service) {
                 return res.status(404).json({
@@ -856,6 +924,23 @@ app.post(
                         }
                     }
                 });
+
+                // Beri tahu freelancer tentang pesanan baru
+try {
+    await db.notification.create({
+        data: {
+            userId: service.freelancerId,
+            title: "Pesanan Baru",
+            message: `Ada pesanan baru untuk jasa "${service.title}".`,
+            type: "NEW_ORDER"
+        }
+    });
+} catch (notificationError) {
+    console.error(
+        "CREATE ORDER NOTIFICATION ERROR:",
+        notificationError
+    );
+}
 
             res.status(201).json({
                 message:
@@ -958,9 +1043,26 @@ app.post(
                     id: orderId
                 },
                 data: {
-                    status: "COMPLETED"
+                    status: "DELIVERED"
                 }
             });
+
+            // Beri tahu client bahwa hasil pekerjaan sudah dikirim
+try {
+    await db.notification.create({
+        data: {
+            userId: order.clientId,
+            title: "Hasil Pekerjaan Terkirim",
+            message: `Freelancer telah mengirim hasil pekerjaan untuk pesanan "${order.service.title}".`,
+            type: "DELIVERY_SENT"
+        }
+    });
+} catch (notificationError) {
+    console.error(
+        "DELIVERY NOTIFICATION ERROR:",
+        notificationError
+    );
+}
 
             res.status(201).json({
                 message:
@@ -1088,27 +1190,23 @@ app.get(
 // COMPLETE ORDER
 // =========================
 
+
 app.put(
     "/api/orders/:orderId/complete",
     authenticateToken,
-    authorizeRole("client"),
     async (req, res) => {
         try {
-            const orderId = parseInt(
-                req.params.orderId,
-                10
-            );
+            const orderId = Number(req.params.orderId);
+            const userId = Number(req.user.userId);
 
-            if (isNaN(orderId)) {
+            if (!Number.isInteger(orderId) || orderId <= 0) {
                 return res.status(400).json({
                     message: "ID order tidak valid"
                 });
             }
 
             const order = await db.order.findUnique({
-                where: {
-                    id: orderId
-                },
+                where: { id: orderId },
                 include: {
                     delivery: true
                 }
@@ -1120,46 +1218,37 @@ app.put(
                 });
             }
 
-            if (
-                order.clientId !==
-                req.user.userId
-            ) {
+            if (order.clientId !== userId) {
                 return res.status(403).json({
-                    message:
-                        "Anda tidak memiliki akses ke order ini"
+                    message: "Hanya client pemilik order yang dapat mengonfirmasi"
+                });
+            }
+
+            if (order.status !== "DELIVERED") {
+                return res.status(400).json({
+                    message: "Order harus berstatus DELIVERED sebelum dikonfirmasi"
                 });
             }
 
             if (!order.delivery) {
                 return res.status(400).json({
-                    message:
-                        "Hasil pekerjaan belum dikirim"
+                    message: "Hasil pekerjaan belum dikirim"
                 });
             }
 
-            if (order.status !== "COMPLETED") {
-                return res.status(400).json({
-                    message:
-                        "Order belum memiliki hasil pekerjaan yang dapat diterima"
-                });
-            }
-
-            res.json({
-                message:
-                    "Hasil pekerjaan berhasil diterima",
-                order
+            const updatedOrder = await db.order.update({
+                where: { id: orderId },
+                data: { status: "COMPLETED" }
             });
 
+            return res.json({
+                message: "Pekerjaan berhasil dikonfirmasi selesai",
+                data: updatedOrder
+            });
         } catch (error) {
-            console.error(
-                "COMPLETE ORDER ERROR:",
-                error
-            );
-
-            res.status(500).json({
-                message:
-                    "Gagal menyelesaikan order",
-                error: error.message
+            console.error("COMPLETE ORDER ERROR:", error);
+            return res.status(500).json({
+                message: "Gagal mengonfirmasi penyelesaian order"
             });
         }
     }
@@ -1436,7 +1525,6 @@ app.post(
 app.post(
     "/api/conversations",
     authenticateToken,
-    authorizeRole("client"),
     async (req, res) => {
         try {
             const clientId = req.user.userId;
@@ -1975,6 +2063,139 @@ function authorizeRole(role) {
 }
 
 // =========================
+// NOTIFICATIONS
+// =========================
+
+// GET semua notifikasi milik user
+app.get(
+    "/api/notifications",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const notifications = await db.notification.findMany({
+                where: {
+                    userId: req.user.userId
+                },
+                orderBy: {
+                    createdAt: "desc"
+                },
+                take: 50
+            });
+
+            res.json({
+                data: notifications
+            });
+        } catch (error) {
+            console.error("GET NOTIFICATIONS ERROR:", error);
+
+            res.status(500).json({
+                message: "Gagal mengambil notifikasi"
+            });
+        }
+    }
+);
+
+// GET jumlah notifikasi belum dibaca
+app.get(
+    "/api/notifications/unread-count",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const count = await db.notification.count({
+                where: {
+                    userId: req.user.userId,
+                    isRead: false
+                }
+            });
+
+            res.json({ count });
+        } catch (error) {
+            console.error("UNREAD COUNT ERROR:", error);
+
+            res.status(500).json({
+                message: "Gagal menghitung notifikasi"
+            });
+        }
+    }
+);
+
+// TANDAI SATU NOTIFIKASI SUDAH DIBACA
+app.put(
+    "/api/notifications/:id/read",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const id = Number(req.params.id);
+
+            if (!Number.isInteger(id) || id <= 0) {
+                return res.status(400).json({
+                    message: "ID notifikasi tidak valid"
+                });
+            }
+
+            const notification = await db.notification.findFirst({
+                where: {
+                    id,
+                    userId: req.user.userId
+                }
+            });
+
+            if (!notification) {
+                return res.status(404).json({
+                    message: "Notifikasi tidak ditemukan"
+                });
+            }
+
+            const updated = await db.notification.update({
+                where: { id },
+                data: { isRead: true }
+            });
+
+            res.json({
+                message: "Notifikasi ditandai sudah dibaca",
+                data: updated
+            });
+        } catch (error) {
+            console.error("READ NOTIFICATION ERROR:", error);
+
+            res.status(500).json({
+                message: "Gagal memperbarui notifikasi"
+            });
+        }
+    }
+);
+
+// TANDAI SEMUA NOTIFIKASI SUDAH DIBACA
+app.put(
+    "/api/notifications/read-all",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const result = await db.notification.updateMany({
+                where: {
+                    userId: req.user.userId,
+                    isRead: false
+                },
+                data: {
+                    isRead: true
+                }
+            });
+
+            res.json({
+                message: "Semua notifikasi ditandai sudah dibaca",
+                updatedCount: result.count
+            });
+        } catch (error) {
+            console.error("READ ALL NOTIFICATIONS ERROR:", error);
+
+            res.status(500).json({
+                message: "Gagal memperbarui notifikasi"
+            });
+        }
+    }
+);
+
+// =========================
 // PROFILE
 // =========================
 
@@ -2083,6 +2304,34 @@ app.put(
         }
     }
 );
+
+// =========================
+// GET CATEGORIES
+// =========================
+
+app.get("/api/categories", async (req, res) => {
+    try {
+        const categories = await db.category.findMany({
+            orderBy: {
+                name: "asc"
+            }
+        });
+
+        res.json({
+            data: categories
+        });
+    } catch (error) {
+        console.error(
+            "GET /api/categories error:",
+            error
+        );
+
+        res.status(500).json({
+            message: "Gagal mengambil kategori",
+            error: error.message
+        });
+    }
+});
 
 // =========================
 // ADMIN - USER MANAGEMENT
@@ -3415,6 +3664,139 @@ app.use((err, req, res, next) => {
         message: "Terjadi kesalahan pada server"
     });
 });
+
+
+/* =========================
+   PAYMENTS
+========================= */
+
+// Buat transaksi pembayaran untuk order
+app.post(
+    "/api/payments",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const orderId = Number(req.body.orderId);
+            const userId = Number(req.user.userId);
+
+            if (!Number.isInteger(orderId) || orderId <= 0) {
+                return res.status(400).json({
+                    message: "ID order tidak valid"
+                });
+            }
+
+            const order = await db.order.findUnique({
+                where: { id: orderId },
+                include: { service: true }
+            });
+
+            if (!order) {
+                return res.status(404).json({
+                    message: "Order tidak ditemukan"
+                });
+            }
+
+            if (order.clientId !== userId) {
+                return res.status(403).json({
+                    message: "Kamu bukan pemilik order ini"
+                });
+            }
+
+            if (order.status !== "PENDING") {
+                return res.status(400).json({
+                    message: "Order tidak lagi menunggu pembayaran"
+                });
+            }
+
+            if (order.paymentStatus === "PAID") {
+                return res.status(400).json({
+                    message: "Order ini sudah dibayar"
+                });
+            }
+
+            const payment = await db.order.update({
+                where: { id: orderId },
+                data: {
+                    paymentStatus: "PENDING"
+                },
+                select: {
+                    id: true,
+                    totalPrice: true,
+                    paymentStatus: true,
+                    paymentReference: true
+                }
+            });
+
+            return res.status(201).json({
+                message:
+                    "Transaksi pembayaran disiapkan. Pembayaran belum terverifikasi.",
+                data: payment
+            });
+        } catch (error) {
+            console.error("CREATE PAYMENT ERROR:", error);
+
+            return res.status(500).json({
+                message: "Gagal menyiapkan transaksi pembayaran"
+            });
+        }
+    }
+);
+
+// Cek status pembayaran milik client
+app.get(
+    "/api/payments/:orderId",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            const orderId = Number(req.params.orderId);
+            const userId = Number(req.user.userId);
+
+            if (!Number.isInteger(orderId) || orderId <= 0) {
+                return res.status(400).json({
+                    message: "ID order tidak valid"
+                });
+            }
+
+            const order = await db.order.findUnique({
+                where: { id: orderId },
+                select: {
+                    id: true,
+                    clientId: true,
+                    totalPrice: true,
+                    paymentStatus: true,
+                    paymentReference: true
+                }
+            });
+
+            if (!order) {
+                return res.status(404).json({
+                    message: "Order tidak ditemukan"
+                });
+            }
+
+            if (order.clientId !== userId) {
+                return res.status(403).json({
+                    message: "Kamu tidak memiliki akses ke pembayaran ini"
+                });
+            }
+
+            return res.json({
+                data: {
+                    id: order.id,
+                    totalPrice: order.totalPrice,
+                    paymentStatus: order.paymentStatus,
+                    paymentReference: order.paymentReference
+                }
+            });
+        } catch (error) {
+            console.error("GET PAYMENT ERROR:", error);
+
+            return res.status(500).json({
+                message: "Gagal mengambil status pembayaran"
+            });
+        }
+    }
+);
 
 app.listen(PORT, () => {
     console.log(`SkillMarket API berjalan di port ${PORT}`);

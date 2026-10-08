@@ -15,9 +15,19 @@ enum UserRole {
 enum OrderStatus {
   PENDING
   IN_PROGRESS
+  DELIVERED
   COMPLETED
   CANCELLED
 }
+
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+} 
 
 model User {
   id           Int      @id @default(autoincrement())
@@ -37,6 +47,7 @@ model User {
   favorites    Favorite[]
   conversations ConversationParticipant[]
   messages     Message[]
+  notifications Notification[]
 }
 
 model Category {
@@ -88,6 +99,9 @@ model Order {
   description String?     @db.Text
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+  paymentStatus PaymentStatus @default(UNPAID)
+  paymentReference String?   @unique
+  
 
   clientId     Int
   serviceId    Int
@@ -167,4 +181,17 @@ model Delivery {
 
   orderId Int  @unique
   order   Order @relation(fields: [orderId], references: [id])
+}
+model Notification {
+  id        Int      @id @default(autoincrement())
+  title     String   @db.VarChar(150)
+  message   String   @db.Text
+  type      String   @db.VarChar(50)
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
 }
